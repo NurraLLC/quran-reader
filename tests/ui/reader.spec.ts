@@ -31,7 +31,7 @@ test('reader: request, word meaning, language and continue where you left off', 
   await page.getByRole('radio', { name: 'Both' }).click();
 
   // Keyboard: an ayah can be chosen with Enter.
-  await page.locator('[id="a-55:14"]').focus();
+  await page.locator('[id="a-55:14"] .r-ayah-follow').focus();
   await page.keyboard.press('Enter');
   await expect(page.locator('.r-ayah.current')).toHaveAttribute('id', 'a-55:14');
 

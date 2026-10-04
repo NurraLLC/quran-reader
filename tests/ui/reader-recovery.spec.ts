@@ -3,6 +3,21 @@ import { expect, test } from '@playwright/test';
 const OWNER = 'ui-test-owner-capability-0001';
 test.use({ viewport: { width: 390, height: 844 } });
 
+test('an initial connection failure shows recovery and opens after reconnecting', async ({ page }) => {
+  let available = false;
+  await page.routeWebSocket('**/ws/control', (socket) => {
+    if (available) socket.connectToServer();
+    else socket.close({ code: 1013, reason: 'Temporary test outage' });
+  });
+  await page.goto(`/reader#owner=${OWNER}`);
+  await expect(page.getByRole('heading', { name: "Couldn't connect to the reader" })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('reconnect automatically');
+  await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible();
+  available = true;
+  await expect(page.locator('.r-top')).toBeVisible();
+  await expect(page.locator('.r-gate')).toHaveCount(0);
+});
+
 test('an unavailable reader offers retry instead of claiming the private link is wrong', async ({ page }) => {
   await page.route('**/api/me', (route) => route.fulfill({ status: 503, body: '{}' }));
   await page.goto(`/reader#owner=${OWNER}`);

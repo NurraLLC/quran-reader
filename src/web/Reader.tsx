@@ -23,6 +23,18 @@ const NBSP = String.fromCharCode(0xa0);
 /** Room under the recited word for its meaning label (it hangs about 22 px below the word). */
 const MEANING_ROOM = 28;
 
+/** The same anchor governs automatic following and whether hand scrolling has left it behind. */
+function readingAnchor(key: string, availableHeight: number) {
+  const ayah = document.getElementById(`a-${key}`);
+  const active = ayah?.querySelector<HTMLElement>('.r-word.active');
+  const long = !!ayah && ayah.getBoundingClientRect().height > availableHeight;
+  const opening = ayah?.querySelector<HTMLElement>('.r-word') ?? ayah?.querySelector<HTMLElement>('.r-en');
+  return {
+    element: active ?? (long ? opening : ayah),
+    block: !active && long ? 'start' as const : 'center' as const,
+  };
+}
+
 /** Per-device memory: the last place and language, and today's recited ayahs. Never required. */
 type Saved = { key?: string; name?: string; lang?: 'both' | 'arabic' | 'english'; day?: string; recited?: string[] };
 const today = () => new Date().toLocaleDateString('en-CA');
@@ -80,6 +92,7 @@ export function Reader() {
   const [mode, setMode] = useState<Access['mode'] | null>(null);
   const [snap, setSnap] = useState<ControlSnapshot | null>(null);
   const [connection, setConnection] = useState<'connecting' | 'open' | 'closed'>('connecting');
+  const [connectionFailed, setConnectionFailed] = useState(false);
   const [surahFailed, setSurahFailed] = useState(false);
   const [surahRetry, setSurahRetry] = useState(0);
   const [capture, setCapture] = useState<CaptureStatus>({ state: 'off', detail: null });
@@ -89,6 +102,7 @@ export function Reader() {
   const [pending, setPending] = useState(false);
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [follow, setFollow] = useState(true);
+  const [reveal, setReveal] = useState(0);
   /** The start page, opened from the menu while a surah is up (recitation or a request leaves it). */
   const [home, setHome] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -155,6 +169,7 @@ export function Reader() {
           onOpen: () => capRef.current?.announce(),
           onStatus: (st, code) => {
             setConnection(st);
+            if (st === 'closed') setConnectionFailed(true);
             if (code === 4401) setAuth('unauthorized');
             if (st !== 'open') setPending(false);
           },
@@ -181,7 +196,10 @@ export function Reader() {
               setMoreOpen(false);
               // Typed searches explicitly show their best match. A spoken description can instead
               // be a private preview; it must not leave Home as if that result were on the page.
-              if (m.result.kind === 'navigate' || (m.result.kind === 'candidates' && m.result.confirmedKey && !m.requestId.startsWith('listen:'))) setHome(false);
+              if (m.result.kind === 'navigate' || (m.result.kind === 'candidates' && m.result.confirmedKey && !m.requestId.startsWith('listen:'))) {
+                setHome(false);
+                setReveal((n) => n + 1);
+              }
               if (m.result.kind !== 'candidates' || !m.result.refining) setTyping(false);
             }
           },
@@ -273,38 +291,46 @@ export function Reader() {
   // as in view only between them (with room under it for its meaning), and scrolling to it
   // (scroll-padding in app.css) centres it in that space.
   const bars = useRef({ top: 96, bottom: 150 });
+  const measureBars = useCallback(() => {
+    const top = document.querySelector<HTMLElement>('.r-top');
+    const dock = document.querySelector<HTMLElement>('.r-dock');
+    if (!top || !dock) return;
+    const t = top.getBoundingClientRect().height;
+    const b = dock.getBoundingClientRect().height;
+    bars.current = { top: t + 8, bottom: b + MEANING_ROOM };
+    document.documentElement.style.setProperty('--r-top-h', `${Math.round(t)}px`);
+    document.documentElement.style.setProperty('--r-dock-h', `${Math.round(b)}px`);
+  }, []);
   const hasSnap = !!snap;
   useEffect(() => {
     const top = document.querySelector<HTMLElement>('.r-top');
     const dock = document.querySelector<HTMLElement>('.r-dock');
     if (!top || !dock || typeof ResizeObserver === 'undefined') return;
     const root = document.documentElement;
-    const measure = () => {
-      const t = top.getBoundingClientRect().height;
-      const b = dock.getBoundingClientRect().height;
-      bars.current = { top: t + 8, bottom: b + MEANING_ROOM };
-      root.style.setProperty('--r-top-h', `${Math.round(t)}px`);
-      root.style.setProperty('--r-dock-h', `${Math.round(b)}px`);
-    };
-    const ro = new ResizeObserver(measure);
+    const ro = new ResizeObserver(measureBars);
     ro.observe(top);
     ro.observe(dock);
-    measure();
+    measureBars();
     return () => {
       ro.disconnect();
       root.style.removeProperty('--r-top-h');
       root.style.removeProperty('--r-dock-h');
     };
-  }, [hasSnap]);
+  }, [hasSnap, measureBars]);
 
   // Keep the recited word (or the new ayah) in view, unless the reader scrolled away on purpose.
   useEffect(() => {
-    if (!follow || !cur) return;
-    const el = document.querySelector<HTMLElement>('.r-word.active') ?? document.getElementById(`a-${cur.key}`);
+    if (!follow || !cur || home) return;
+    // Home, language and confirmation changes can resize the bars in this render, before
+    // ResizeObserver delivers its next callback. Scroll against their current dimensions.
+    measureBars();
+    // A long ayah begins at its first word/text when chosen by hand; centering its whole
+    // section would skip the opening. During recitation, keep following the active word.
+    const { element: el, block } = readingAnchor(cur.key, window.innerHeight - bars.current.top - bars.current.bottom);
     if (!el) return;
     const r = el.getBoundingClientRect();
-    if (r.top < bars.current.top || r.bottom > window.innerHeight - bars.current.bottom) el.scrollIntoView({ block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
-  }, [cur?.key, d?.cursor?.from, surah?.number, follow, appearance.scale]);
+    if (r.top < bars.current.top || r.bottom > window.innerHeight - bars.current.bottom) el.scrollIntoView({ block, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  }, [cur?.key, d?.cursor?.from, surah?.number, follow, appearance.scale, lang, home, reveal, measureBars]);
 
   // Scrolling by hand pauses following only once the recited ayah is out of view (a nudge, or
   // scrolling back to it, keeps following). The next word recited after a few still seconds brings
@@ -312,10 +338,13 @@ export function Reader() {
   useEffect(() => {
     let t = 0;
     const check = () => {
-      const el = document.querySelector<HTMLElement>('.r-word.active') ?? (curKey.current ? document.getElementById(`a-${curKey.current}`) : null);
+      if (!curKey.current) return;
+      const { element: el, block } = readingAnchor(curKey.current, window.innerHeight - bars.current.top - bars.current.bottom);
       if (!el) return;
       const r = el.getBoundingClientRect();
-      setFollow(r.bottom > bars.current.top && r.top < window.innerHeight - bars.current.bottom);
+      // A long translation is one paragraph: only its opening line keeps following on.
+      const bottom = block === 'start' ? r.top + Math.min(r.height, parseFloat(getComputedStyle(el).lineHeight) || r.height) : r.bottom;
+      setFollow(bottom > bars.current.top && r.top < window.innerHeight - bars.current.bottom);
     };
     const byHand = () => {
       lastScroll.current = performance.now();
@@ -346,9 +375,10 @@ export function Reader() {
     setFollow(true);
   };
   const goto = (key: string) => {
-    send({ type: 'goto', key });
+    if (!send({ type: 'goto', key })) return;
     setFollow(true);
     setHome(false);
+    if (key === cur?.key) setReveal((n) => n + 1);
   };
 
   if (auth === 'unavailable') {
@@ -362,7 +392,11 @@ export function Reader() {
       </main>
     );
   }
-  if (!snap) return <main className="r-gate"><p>Opening…</p></main>;
+  if (!snap) return <main className="r-gate">{connectionFailed ? <>
+    <h1>Couldn't connect to the reader</h1>
+    <p role="status">Check your connection. The reader will reconnect automatically.</p>
+    <button onClick={() => location.reload()}>Try again</button>
+  </> : <p role="status">Opening…</p>}</main>;
 
   const listening = cap.listening;
   const starting = capture.state === 'starting' || capture.state === 'reconnecting';
@@ -501,15 +535,8 @@ export function Reader() {
                   id={`a-${a.key}`}
                   className={`r-ayah${isCur ? ' current' : ''}`}
                   onClick={() => goto(a.key)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      goto(a.key);
-                    }
-                  }}
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`${shownSurah.name} ${a.key}${isCur ? ', on screen' : ', follow from here'}`}
+                  role="group"
+                  aria-label={`${shownSurah.name} ${a.key}`}
                   aria-current={isCur ? 'true' : undefined}
                 >
                   {lang !== 'english' && (
@@ -533,7 +560,7 @@ export function Reader() {
                               {w}
                               {gloss && <span className="r-gloss" lang="en" dir="ltr">{gloss}</span>}
                             </span>
-                            {i < words.length - 1 ? ' ' : <>{NBSP}<span className="r-mark">{arabicNumber(a.ayah)}</span></>}
+                            {i < words.length - 1 ? ' ' : <>{NBSP}<button className="r-mark r-ayah-follow" lang="en" aria-label={`Follow from ${shownSurah.name} ${a.key}`} aria-current={isCur ? 'true' : undefined} onClick={(e) => { e.stopPropagation(); goto(a.key); }}><span aria-hidden="true" lang="ar">{arabicNumber(a.ayah)}</span></button></>}
                           </span>
                         );
                       })}
@@ -541,7 +568,7 @@ export function Reader() {
                   )}
                   {lang !== 'arabic' && (
                     <p className="r-en" lang="en">
-                      {lang === 'english' && <span className="r-num">{a.ayah}</span>}
+                      {lang === 'english' && <button className="r-num r-ayah-follow" aria-label={`Follow from ${shownSurah.name} ${a.key}`} aria-current={isCur ? 'true' : undefined} onClick={(e) => { e.stopPropagation(); goto(a.key); }}><span aria-hidden="true">{a.ayah}</span></button>}
                       {a.english}
                     </p>
                   )}
