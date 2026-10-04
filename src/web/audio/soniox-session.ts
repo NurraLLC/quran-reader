@@ -216,6 +216,8 @@ export class SonioxCapture {
   private mic: SharedMic | null = null;
   /** Listening is on (the user's choice); a provider stream may be open or dozing. */
   private active = false;
+  /** Stop invalidates pending microphone work; provider restarts keep this session identity. */
+  private captureGeneration = 0;
   private consentRequest: AbortController | null = null;
   private dozing = false;
   /** Microphone input level 0..1 while listening (0 when not listening). */
@@ -404,6 +406,7 @@ export class SonioxCapture {
     this.commandOnly = !!opts.commandOnly;
     this.stopping = false;
     this.dozing = false;
+    const generation = ++this.captureGeneration;
     const epoch = this.nextEpoch();
     if (!this.commandOnly) {
       this.capture(epoch, 'starting');
@@ -414,15 +417,16 @@ export class SonioxCapture {
     this.setStatus({ state: 'starting', detail: null });
     let mic: SharedMic;
     try {
-      mic = await this.openMic();
+      mic = await this.openMic(generation);
     } catch (e) {
+      if (!this.active || generation !== this.captureGeneration) return;
       const detail = describeError(e);
       this.teardown();
       this.setStatus({ state: 'error', detail });
       if (!this.commandOnly) this.capture(epoch, 'error', detail);
       return;
     }
-    if (!this.active) return mic.close(); // stopped while the permission prompt was open
+    if (!this.active || generation !== this.captureGeneration) return mic.close();
     this.mic = mic;
     this.openStream(epoch);
     if (!this.commandOnly) {
@@ -448,8 +452,10 @@ export class SonioxCapture {
     }
   }
 
-  private openMic() {
-    return SharedMic.open(
+  private async openMic(generation: number) {
+    let ownedMic: SharedMic | null = null;
+    const current = () => this.active && generation === this.captureGeneration && ownedMic !== null && this.mic === ownedMic;
+    const mic = await SharedMic.open(
       {
         ...(this.deviceId ? { deviceId: { exact: this.deviceId } } : {}),
         echoCancellation: false,
@@ -458,10 +464,12 @@ export class SonioxCapture {
         channelCount: 1,
       },
       DOZE_AFTER_MS,
-      (e) => this.onVoice(e),
-      (speaking) => this.onPause(speaking),
-      () => this.onMicChange(),
+      (e) => { if (current()) this.onVoice(e); },
+      (speaking) => { if (current()) this.onPause(speaking); },
+      () => { if (current()) this.onMicChange(); },
     );
+    ownedMic = mic;
+    return mic;
   }
 
   // ---------- screen off, backgrounding ----------
@@ -518,22 +526,29 @@ export class SonioxCapture {
    */
   private async recover() {
     if (!this.listening || !this.mic || this.recovering || document.visibilityState !== 'visible') return;
+    const generation = this.captureGeneration;
+    const previousMic = this.mic;
+    let ownedMic = previousMic;
+    const current = () => this.listening && generation === this.captureGeneration && this.mic === ownedMic;
     this.recovering = true;
     try {
       const away = this.awaySince === null ? 0 : performance.now() - this.awaySince;
       // Only a suspension is forgiven: a desktop tab that was merely hidden kept listening (and its idle clock).
       if (this.awaySince !== null) this.lastArabicAt = Math.max(this.lastArabicAt, performance.now());
-      if (!this.mic.live) {
-        const mic = await this.openMic();
-        if (!this.listening) return mic.close();
-        this.mic.close();
+      if (!previousMic.live) {
+        const mic = await this.openMic(generation);
+        if (!current()) return mic.close();
+        previousMic.close();
         this.mic = mic;
+        ownedMic = mic;
         this.awaySince = null;
         if (this.line) return this.askAgain();
         if (!this.dozing) void this.restart();
         return this.tell(BACK_ON_SCREEN);
       }
-      if (!(await this.mic.resume())) {
+      const resumed = await previousMic.resume();
+      if (!current()) return;
+      if (!resumed) {
         this.waitForTap();
         return this.tell(this.awaySince !== null ? TAP_TO_CONTINUE : TAP_TO_LISTEN, true);
       }
@@ -548,13 +563,14 @@ export class SonioxCapture {
       void this.restart();
       this.tell(BACK_ON_SCREEN);
     } catch (e) {
+      if (!current()) return;
       const detail = describeError(e);
       const epoch = this.epoch;
       this.teardown();
       this.setStatus({ state: 'error', detail });
       this.capture(epoch, 'error', detail);
     } finally {
-      this.recovering = false;
+      if (generation === this.captureGeneration) this.recovering = false;
     }
   }
 
@@ -935,6 +951,8 @@ export class SonioxCapture {
   }
 
   private teardown() {
+    this.captureGeneration++;
+    this.recovering = false;
     this.endStream();
     if (this.liveRetryTimer) clearTimeout(this.liveRetryTimer);
     this.liveRetryTimer = null;
