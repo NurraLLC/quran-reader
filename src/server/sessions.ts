@@ -7,7 +7,8 @@
 //   Blank           → audience sees nothing; tracking continues underneath.
 //   Listening lost  → (the control page gone, or its stream failed) after a grace the ayah is hidden,
 //                     never cleared, and it returns by itself when listening does.
-//   Manual navigation always publishes (it is explicit), and re-anchors the tracker.
+//   Manual navigation always publishes (it is explicit), and re-anchors the tracker. Presses in quick
+//   succession (a burst, a held arrow key) reach the audience once, where they end (NAV_SETTLE_MS).
 
 import { shortGroup } from './corpus/groups';
 import type { WordGlosses } from './corpus/wbw';
@@ -52,6 +53,13 @@ import { ArabicSurahRequests } from './commands/arabic-request';
 
 /** Listening lost this long hides the ayah from stream: longer than a control page takes to reload. */
 export const DISCONNECT_GRACE_MS = 15_000;
+/**
+ * Next/Previous presses closer together than this are one burst: the first goes on stream at once,
+ * the rest only on the control page, and the audience is given where they end this long after the last.
+ */
+export const NAV_SETTLE_MS = 300;
+/** Messages the control page sends by itself (recognition, capture state, measurements): they never end a burst. */
+const AUTOMATIC: ReadonlySet<ControlClientMessage['type']> = new Set(['transcript', 'voice', 'capture', 'layout']);
 /** A highlight catching up passes each word between for this long (the highlight's own fade). */
 const SWEEP_MS = 90;
 /** Words heard in one stream beyond which its results are ignored (three hours is ~25,000). */
@@ -122,7 +130,16 @@ export class Session {
 
   private revision = 0;
   private lastPublishedKey = '';
+  /** The latest display, as the control page has it. */
   display: DisplayState;
+  /** The display as the audience (OBS, reading screens) was last sent it, and its content key. */
+  private audienceState: DisplayState;
+  private audienceKey = '';
+  /** A Next/Previous press was made within NAV_SETTLE_MS; `navHolding`: a burst is under way. */
+  private navTimer: unknown = null;
+  private navHolding = false;
+  /** The control page has a display the audience was not sent yet (during a burst). */
+  private audienceBehind = false;
   private displayVerse: number | null = null;
   private trackerVerse: number | null = null;
   private held = false;
@@ -228,6 +245,7 @@ export class Session {
       this.logEvent('restore', restored.key, this.blanked ? 'hidden' : undefined);
     }
     this.display = this.buildDisplay();
+    this.audienceState = this.display;
     this.shownSaved = restored ? `${restored.key}|${this.blanked}` : '';
   }
 
@@ -355,9 +373,10 @@ export class Session {
       this.lastPublishedKey = key;
       this.revision++;
       this.display = { ...next, revision: this.revision };
-      this.sentAt.set(this.revision, this.clock.now());
-      if (this.sentAt.size > 64) this.sentAt.delete(this.sentAt.keys().next().value!);
-      for (const fn of this.displayListeners) fn(this.display);
+      // During a burst of Next/Previous presses only the control page follows each press; the
+      // audience is sent where the presses end (endNavBurst).
+      if (this.navHolding) this.audienceBehind = true;
+      else this.toAudience();
       this.emitControl({ type: 'display', state: this.display });
       this.rememberShown();
       this.schedulePageTimer();
@@ -367,6 +386,70 @@ export class Session {
     this.queueSnapshot();
   }
 
+  /** What an overlay (OBS, a reading screen) is given when it connects: what the audience was last sent. */
+  get audienceDisplay(): DisplayState {
+    return this.audienceState;
+  }
+
+  /** Sends the latest display to the audience, unless it already has the same. */
+  private toAudience() {
+    this.audienceBehind = false;
+    if (this.audienceKey === this.lastPublishedKey) return;
+    this.audienceKey = this.lastPublishedKey;
+    this.audienceState = this.display;
+    this.sentAt.set(this.display.revision, this.clock.now());
+    if (this.sentAt.size > 64) this.sentAt.delete(this.sentAt.keys().next().value!);
+    for (const fn of this.displayListeners) fn(this.display);
+  }
+
+  /**
+   * A Next/Previous press. A press soon after another starts or continues a burst: the control page
+   * follows every press (the broadcaster sees where they are), and the audience is sent only where
+   * the presses end, NAV_SETTLE_MS after the last, instead of each ayah between for a tenth of a second.
+   */
+  private navPress(to: number) {
+    if (this.navTimer !== null) {
+      this.clock.clearTimeout(this.navTimer);
+      this.navHolding = true;
+    }
+    this.navTimer = this.clock.setTimeout(() => {
+      this.navTimer = null;
+      this.endNavBurst();
+    }, NAV_SETTLE_MS);
+    this.gotoIndex(to, 'manual');
+  }
+
+  /** The presses stopped: the audience is sent where they ended. */
+  private endNavBurst() {
+    this.releaseNav();
+    this.catchUpAudience();
+  }
+
+  /** No longer a burst: the next change reaches the audience at once. */
+  private releaseNav() {
+    if (this.navTimer !== null) this.clock.clearTimeout(this.navTimer);
+    this.navTimer = null;
+    this.navHolding = false;
+  }
+
+  /** The audience is sent the control page's display if a burst left it behind. */
+  private catchUpAudience() {
+    if (!this.audienceBehind || this.navHolding) return;
+    this.toAudience();
+    this.rememberShown();
+  }
+
+  /**
+   * Something the broadcaster did besides Next/Previous ends a burst: its own change (a typed
+   * reference, Hide) reaches the audience at once, never the burst's last press just before it, and
+   * if it changed nothing on screen the audience catches up with where the presses got to.
+   */
+  private settleNav(act: () => void) {
+    this.releaseNav();
+    act();
+    this.catchUpAudience();
+  }
+
   /** `${ayah}|${hidden}` as last saved (onDisplayKey). */
   private shownSaved = '';
   private saveWarned = false;
@@ -374,8 +457,8 @@ export class Session {
   /** Saves the ayah the audience was shown, and whether it is hidden, when either changes. */
   private rememberShown() {
     if (!this.o.onDisplayKey) return;
-    const v = this.display.verse;
-    const shown = v ? { key: v.key, hidden: !this.display.visible } : null;
+    const v = this.audienceState.verse;
+    const shown = v ? { key: v.key, hidden: !this.audienceState.visible } : null;
     const key = shown ? `${shown.key}|${shown.hidden}` : '';
     if (key === this.shownSaved) return;
     this.shownSaved = key;
@@ -462,6 +545,11 @@ export class Session {
   // ---------- control input ----------
 
   handle(msg: ControlClientMessage) {
+    if (msg.type === 'nav' || AUTOMATIC.has(msg.type)) return this.apply(msg);
+    this.settleNav(() => this.apply(msg));
+  }
+
+  private apply(msg: ControlClientMessage) {
     switch (msg.type) {
       case 'transcript':
         return this.onTranscript(msg);
@@ -474,7 +562,7 @@ export class Session {
         if (base === null) return this.say('Nothing is on screen yet — pick a starting ayah or search first.');
         const to = base + (msg.action === 'next' ? 1 : -1);
         if (to < 0 || to >= this.o.corpus.verses.length) return this.say(msg.action === 'next' ? 'That is the last ayah.' : 'That is the first ayah.');
-        return this.gotoIndex(to, 'manual');
+        return this.navPress(to);
       }
       case 'goto': {
         const v = this.o.corpus.verse(msg.key);
@@ -962,6 +1050,8 @@ export class Session {
     this.latestCommand?.ctrl.abort();
     this.follower.stop();
     this.cancelDisconnect();
+    if (this.navTimer !== null) this.clock.clearTimeout(this.navTimer);
+    this.navTimer = null;
     if (this.pageTimer !== null) this.clock.clearTimeout(this.pageTimer);
     this.pageTimer = null;
     if (this.snapshotTimer !== null) this.clock.clearTimeout(this.snapshotTimer);
@@ -1060,8 +1150,10 @@ export class Session {
       this.say(result.label);
     }
     if (result.kind === 'navigate') {
-      this.gotoIndex(this.o.corpus.verse(result.key)!.index, 'command');
-      if (requestId.startsWith('listen:')) { this.held = false; this.heldBySearch = false; this.publish(); }
+      this.settleNav(() => {
+        this.gotoIndex(this.o.corpus.verse(result.key)!.index, 'command');
+        if (requestId.startsWith('listen:')) { this.held = false; this.heldBySearch = false; this.publish(); }
+      });
       this.latestCommand = cmd;
     }
     // Cards and their adjacent-ayah context (browsable in the card) may be shown.
@@ -1071,11 +1163,14 @@ export class Session {
     if (!show && requestId.startsWith('listen:') && EXPLICIT_FIND.test(text.trim())) show = true;
     if (show && result.kind === 'candidates') {
       if (result.confirmedKey) {
-        this.gotoIndex(this.o.corpus.verse(result.confirmedKey)!.index, 'command');
-        this.held = false;
-        this.heldBySearch = false;
-        this.say(`Showing ${result.confirmedKey}, the best match for “${text}”. Other matches are in Recite or ask.`);
-        this.publish();
+        const key = result.confirmedKey;
+        this.settleNav(() => {
+          this.gotoIndex(this.o.corpus.verse(key)!.index, 'command');
+          this.held = false;
+          this.heldBySearch = false;
+          this.say(`Showing ${key}, the best match for “${text}”. Other matches are in Recite or ask.`);
+          this.publish();
+        });
       } else this.say(`No single passage clearly matched “${text}”. Pick one of the matches to show it.`);
     }
     this.emitControl({ type: 'command_result', requestId, result });

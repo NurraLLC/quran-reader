@@ -602,8 +602,9 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
           s.revokeListeners.delete(revoke);
           s.endListeners.delete(ended);
         };
-        // Full latest state immediately on (re)connect.
-        send({ type: 'display', state: s.display });
+        // Full latest state immediately on (re)connect: what the audience was last sent (during a
+        // burst of Next presses the control page is a little ahead).
+        send({ type: 'display', state: s.audienceDisplay });
         send({ type: 'stream', state: s.stream });
       } else if (m.type === 'painted' && off && role === 'overlay') {
         s.painted(m.revision);
