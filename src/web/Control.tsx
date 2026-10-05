@@ -65,13 +65,23 @@ export function Control() {
   const [result, setResult] = useState<{ id: string; r: CommandResult } | null>(null);
   const [copied, setCopied] = useState(false);
   /** The clipboard refused the overlay link (no permission, or not a secure page): it is shown to copy by hand. */
-  const [copyFailed, setCopyFailed] = useState(false);
+  const [copyFailed, setCopyFailed] = useState<false | 'first-run' | 'output'>(false);
   /** Where this page is served from: the owner's own machine, or the public site. Words differ. */
   const [mode, setMode] = useState<'local' | 'hosted' | null>(null);
   /** Listening time left (hosted service only). */
   const [credits, setCredits] = useState<CreditView | null>(null);
   const [stream, setStream] = useState<StreamState | null>(null);
-  const [previewMode, setPreviewMode] = useState<'overlay' | 'stream'>('overlay');
+  // The preview a broadcaster chose (plain overlay or charity scene) is remembered on this device: its
+  // page counts drive the page buttons, so it must match what OBS shows after a reload too.
+  const [previewMode, setPreviewMode] = useState<'overlay' | 'stream'>(() => {
+    try { return localStorage.getItem('qo.previewMode') === 'stream' ? 'stream' : 'overlay'; } catch { return 'overlay'; }
+  });
+  /** The overlay link was just replaced: the new one must be pasted into OBS. */
+  const [replaced, setReplaced] = useState(false);
+  /** This device has seen OBS open the overlay before (the first-run steps then stay folded). */
+  const [obsSeen, setObsSeen] = useState(() => { try { return localStorage.getItem('qo.obsSeen') === '1'; } catch { return false; } });
+  const [firstRunDone, setFirstRunDone] = useState(false);
+  const obsSeenAtLoad = useRef(obsSeen);
   const [backdrop, setBackdrop] = useState<'grid' | 'light' | 'dark'>('grid');
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
@@ -115,6 +125,7 @@ export function Control() {
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'control';
+    document.title = 'Stream controls · Quran Reader';
     let cancelled = false;
     access()
       .then((s) => {
@@ -132,7 +143,11 @@ export function Control() {
           onOpen: () => captureRef.current?.announce(),
           onStatus: (st, code) => {
             setConn(st);
-            if (code === 4401) setAuth('unauthorized');
+            if (code === 4401) {
+              setAuth('unauthorized');
+              // This page no longer controls anything: the microphone it opened closes with it.
+              captureRef.current?.stop();
+            }
           },
           shouldRetry: (code) => code !== 4401,
           onMessage: (data) => {
@@ -198,7 +213,39 @@ export function Control() {
     if (next === previewMode) return;
     setMeasured(null);
     setPreviewMode(next);
+    try { localStorage.setItem('qo.previewMode', next); } catch { /* still works for this visit */ }
     layoutSentAt.current = '';
+  };
+
+  // OBS (or a reading screen) opened the overlay: remembered, so a returning broadcaster is not shown
+  // the whole first-run again.
+  const overlayOpen = (snap?.overlay.clients ?? 0) > 0;
+  useEffect(() => {
+    if (!overlayOpen || obsSeen) return;
+    setObsSeen(true);
+    try { localStorage.setItem('qo.obsSeen', '1'); } catch { /* shown again next visit */ }
+  }, [overlayOpen, obsSeen]);
+
+  const copyOverlayLink = (where: 'first-run' | 'output') => {
+    if (!snap) return;
+    const failed = () => setCopyFailed(where);
+    const done = () => {
+      setCopyFailed(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    };
+    // The clipboard needs a secure page and the browser's permission; either can be missing.
+    try {
+      navigator.clipboard.writeText(snap.overlay.url).then(done, failed);
+    } catch {
+      failed();
+    }
+  };
+  const replaceLink = () => {
+    if (!snap) return;
+    const n = snap.overlay.clients;
+    if (n > 0 && !window.confirm(`OBS (or a reading screen) is showing this link now${n > 1 ? ` in ${n} places` : ''}. Replacing it turns it off until you paste the new link into the Browser source. Replace it?`)) return;
+    if (send({ type: 'rotate_view' })) setReplaced(true);
   };
 
   const runCommand = useCallback(
@@ -212,11 +259,13 @@ export function Control() {
     [send],
   );
 
-  // Keyboard: ←/→ navigate, H pause/resume, B hide/show. Ignored while typing.
+  // Keyboard: ←/→ navigate, H pause/resume, B hide/show. Ignored while typing, and arrow keys inside
+  // a choice group (language, view, look...) move between its choices instead of changing the ayah.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement;
       if (t.closest('input, textarea, select') || e.metaKey || e.ctrlKey || e.altKey || !snap) return;
+      if (e.key.startsWith('Arrow') && t.closest('[role="radiogroup"]')) return;
       if (e.key === 'ArrowRight') send({ type: 'nav', action: 'next' });
       else if (e.key === 'ArrowLeft') send({ type: 'nav', action: 'prev' });
       else if (e.key.toLowerCase() === 'h') send({ type: 'hold', on: !snap.held });
@@ -227,6 +276,19 @@ export function Control() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [snap, send]);
+
+  /** Radio groups: arrow keys move to the previous/next choice and choose it (the ARIA radio pattern). */
+  const onRadioKeys = (e: React.KeyboardEvent) => {
+    const radio = (e.target as HTMLElement).closest<HTMLElement>('[role="radio"]');
+    const group = radio?.closest<HTMLElement>('[role="radiogroup"]');
+    if (!radio || !group || !['ArrowRight', 'ArrowDown', 'ArrowLeft', 'ArrowUp'].includes(e.key)) return;
+    const choices = [...group.querySelectorAll<HTMLButtonElement>('[role="radio"]')].filter((b) => !b.disabled);
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : -1;
+    const next = choices[(choices.indexOf(radio as HTMLButtonElement) + step + choices.length) % choices.length];
+    e.preventDefault();
+    next?.focus();
+    next?.click();
+  };
 
   if (auth === 'unauthorized') {
     return (
@@ -260,11 +322,24 @@ export function Control() {
   const listening = cap.listening;
   const d = snap.display;
   const lay = measured && measured.key === d.verse?.key ? measured : null;
+  // The translation page the preview shows: while the broadcaster has not paged (page 1, no timer),
+  // every output turns its own pages with the recitation; this is the preview's.
+  const translationFollows = d.englishPage === 0 && !d.style.translationPageSeconds;
+  const translationPage = (() => {
+    const n = lay?.englishPages ?? 1;
+    if (!translationFollows) return d.englishPage % n;
+    const words = d.verse ? toQpcHafsEncoding(d.verse.arabic).split(/\s+/).filter(Boolean).length : 0;
+    const at = d.cursor && words ? (d.cursor.from + 1) / words : d.progress;
+    return at === null ? 0 : Math.min(n - 1, Math.floor(at * n));
+  })();
+  // First use: the three steps, confirmed in place when OBS opens the link (then Done). A returning
+  // broadcaster sees one folded line until OBS connects, and nothing once it has.
+  const showFirstRun = overlayOpen ? !obsSeenAtLoad.current && !firstRunDone : true;
 
   return (
-    <div className="control">
+    <div className="control" onKeyDown={onRadioKeys}>
       <header className="topbar">
-        <div className="brand">Quran Overlay</div>
+        <div className="brand">Quran Reader<span className="brand-sub"> · Stream controls</span></div>
         <div className={`status status-${st.tone}`} role="status" aria-live="polite">
           <span className="dot" aria-hidden />
           <div>
@@ -294,11 +369,23 @@ export function Control() {
               {([['follow', 'Follow words'], ['word', 'Word focus'], ['ayah', 'Full ayah']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={d.style.readingMode === value} className={d.style.readingMode === value ? 'primary' : ''} disabled={value === 'word' && d.style.language === 'english'} title={value === 'word' && d.style.language === 'english' ? 'Word focus shows one Arabic word' : undefined} onClick={() => send({ type: 'style', patch: { readingMode: value } })}>{label}</button>)}
             </div>
           </div>
-          <StageFrame className={`preview preview-${backdrop}`}>
-            {previewMode === 'stream' ? <Suspense fallback={<div className="preview-loading">Opening the charity scene…</div>}>
-              {stream && <StreamScene display={d} stream={stream} onLayout={setMeasured} />}
-            </Suspense> : <VerseDisplay state={d} fontsReady={fontsReady} onLayout={setMeasured} preview />}
-          </StageFrame>
+          <div className="preview-wrap">
+            <StageFrame className={`preview preview-${backdrop}`}>
+              {previewMode === 'stream' ? <Suspense fallback={<div className="preview-loading">Opening the charity scene…</div>}>
+                {stream && <StreamScene display={d} stream={stream} onLayout={setMeasured} />}
+              </Suspense> : <VerseDisplay state={d} fontsReady={fontsReady} onLayout={setMeasured} preview />}
+            </StageFrame>
+            {/* An empty preview offers the first useful result (shown to OBS too, like any choice here). */}
+            {previewMode === 'overlay' && !d.verse && !snap.blanked && (
+              <div className="empty-guide">
+                <div>
+                  <h3>Nothing on screen yet</h3>
+                  <p>This preview shows exactly what your stream shows. Recite, type a reference, or start with one ayah:</p>
+                  <button className="primary" onClick={() => send({ type: 'goto', key: '1:1' })}>Show Al-Fatihah 1:1</button>
+                </div>
+              </div>
+            )}
+          </div>
           <div className="preview-environment" role="radiogroup" aria-label="Preview backdrop">
             <span>Check over</span>
             {([['grid', 'Transparency grid'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={backdrop === value} className={backdrop === value ? 'on' : ''} onClick={() => setBackdrop(value)}>{label}</button>)}
@@ -332,10 +419,10 @@ export function Control() {
               )}
               {lay.englishPages > 1 && (
                 <span>
-                  Translation page {(d.englishPage % lay.englishPages) + 1}/{lay.englishPages}
-                  <button onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + lay.englishPages - 1) % lay.englishPages })}>‹</button>
-                  <button onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + 1) % lay.englishPages })}>›</button>
-                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : 'manual'}</span>
+                  Translation page {translationPage + 1}/{lay.englishPages}{translationFollows ? ' · follows your recitation' : ''}
+                  <button title="Previous translation page" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + lay.englishPages - 1) % lay.englishPages })}>‹</button>
+                  <button title="Next translation page (after the last, back to following)" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + 1) % lay.englishPages })}>›</button>
+                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : translationFollows ? '› reads ahead' : 'back to page 1 to follow again'}</span>
                 </span>
               )}
             </div>
@@ -346,7 +433,19 @@ export function Control() {
         </section>
 
         <aside className="side">
+          {showFirstRun && (
+            <FirstRun
+              clients={snap.overlay.clients}
+              folded={obsSeen && !overlayOpen}
+              copied={copied}
+              copyFailed={copyFailed === 'first-run'}
+              url={snap.overlay.url}
+              onCopy={() => copyOverlayLink('first-run')}
+              onDone={() => setFirstRunDone(true)}
+            />
+          )}
           <VoiceCard
+            mode={mode}
             snap={snap}
             capture={capture}
             listening={listening}
@@ -377,7 +476,8 @@ export function Control() {
               lastRequest.current = null;
             }}
           />
-          <details className="diagnostics">
+          {/* Developer diagnostics belong to self-hosted copies; the public page never shows them. */}
+          {mode !== 'hosted' && <details className="diagnostics">
             <summary>Tracker diagnostics</summary>
             <div className="diag-grid">
               <div>
@@ -406,8 +506,8 @@ export function Control() {
                 <option value="jev_required">Experimental: wait for JEV at each ayah</option>
               </select>
             </label>
-          </details>
-          <details className="diagnostics">
+          </details>}
+          {mode !== 'hosted' && <details className="diagnostics">
             <summary>Quran resources ({snap.setup.resources.filter((r) => r.state === 'in use').length} in use)</summary>
             <ul className="resources">
               {snap.setup.resources.map((r) => (
@@ -417,26 +517,16 @@ export function Control() {
                 </li>
               ))}
             </ul>
-          </details>
+          </details>}
           <OutputCard
             snap={snap}
             send={send}
+            hosted={mode === 'hosted'}
             copied={copied}
-            copyFailed={copyFailed}
-            onCopy={() => {
-              const failed = () => setCopyFailed(true);
-              const done = () => {
-                setCopyFailed(false);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 1800);
-              };
-              // The clipboard needs a secure page and the browser's permission; either can be missing.
-              try {
-                navigator.clipboard.writeText(snap.overlay.url).then(done, failed);
-              } catch {
-                failed();
-              }
-            }}
+            copyFailed={copyFailed === 'output'}
+            onCopy={() => copyOverlayLink('output')}
+            onReplace={replaceLink}
+            replaced={replaced}
           />
           <CharityCard snap={snap} stream={stream} send={send} onPreview={() => { choosePreview('stream'); document.getElementById('audience-preview')?.scrollIntoView({ block: 'start' }); }} />
         </aside>
@@ -573,6 +663,7 @@ function CharityCard({ snap, stream, send, onPreview }: { snap: ControlSnapshot;
  * results of either appear right here.
  */
 function VoiceCard(p: {
+  mode: 'local' | 'hosted' | null;
   snap: ControlSnapshot;
   capture: CaptureStatus;
   listening: boolean;
@@ -605,9 +696,9 @@ function VoiceCard(p: {
   return (
     <section className="card voice-card">
       <h2>Recite or ask</h2>
-      {!p.snap.setup.soniox && (
-        <p className="setup">Listening needs a Soniox key: add <code>SONIOX_API_KEY</code> to <code>.env</code> and restart the server. Typing, navigation and the overlay work without it.</p>
-      )}
+      {!p.snap.setup.soniox && (p.mode === 'hosted'
+        ? <p className="setup">Listening is unavailable right now. Typing, navigation and the overlay still work.</p>
+        : <p className="setup">Listening needs a Soniox key: add <code>SONIOX_API_KEY</code> to <code>.env</code> and restart the server. Typing, navigation and the overlay work without it.</p>)}
       <div className="listen-row">
         {p.listening || starting ? (
           <button className="big stop" onClick={p.onStop}>Stop listening</button>
@@ -770,7 +861,64 @@ function ResultCard({ card, confirmed, onShow }: { card: SearchCard; confirmed: 
   );
 }
 
-function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlSnapshot; send: (m: ControlClientMessage) => boolean; copied: boolean; copyFailed: boolean; onCopy: () => void }) {
+function CopyFallback({ url }: { url: string }) {
+  return (
+    <div className="copy-fallback">
+      <p className="warn">The link couldn’t be copied automatically. Here it is: select it and copy it.</p>
+      <input readOnly value={url} aria-label="OBS overlay link" autoFocus onFocus={(e) => e.currentTarget.select()} />
+    </div>
+  );
+}
+
+/**
+ * Getting the overlay into OBS in three steps, with step 2's live state (every open OBS source or
+ * reading screen counts). Folded to one line for a broadcaster who has done it before on this device.
+ */
+function FirstRun({ clients, folded, copied, copyFailed, url, onCopy, onDone }: { clients: number; folded: boolean; copied: boolean; copyFailed: boolean; url: string; onCopy: () => void; onDone: () => void }) {
+  const open = clients > 0;
+  const copy = <button className="primary" onClick={onCopy}>{copied ? 'Copied' : 'Copy OBS overlay link'}</button>;
+  if (folded) {
+    return (
+      <section className="card first-run folded" aria-label="Stream output">
+        <div className="fr-folded">
+          <span className="wait"><i aria-hidden="true" />Overlay not open in OBS yet</span>
+          {copy}
+        </div>
+        {copyFailed && <CopyFallback url={url} />}
+      </section>
+    );
+  }
+  return (
+    <section className="card first-run" aria-labelledby="fr-title">
+      <h2 id="fr-title">{open ? 'Your overlay is open' : 'On your stream in three steps'}</h2>
+      <ol className="steps">
+        <li className={open ? 'done' : undefined}>
+          <div>
+            {copy}
+            <p className="hint">The link can only show ayahs. Keep it private.</p>
+            {copyFailed && <CopyFallback url={url} />}
+          </div>
+        </li>
+        <li className={open ? 'done' : undefined}>
+          <div>
+            <p className="obs-path">In OBS: <kbd>Sources</kbd> → <kbd>+</kbd> → <kbd>Browser</kbd>, paste the link, set it to your canvas size (16:9, such as 1920 × 1080).</p>
+            <p className="hint">Leave “Shutdown source when not visible” off.</p>
+            <p className={`wait${open ? ' ok' : ''}`} role="status"><i aria-hidden="true" />{open ? `Open in ${clients} ${clients === 1 ? 'place' : 'places'} (OBS or a reading screen)` : 'Waiting for OBS to open the link…'}</p>
+          </div>
+        </li>
+        <li>
+          <div>
+            <p className="obs-path">Recite, or type a reference below.</p>
+            <p className="hint">The microphone stays on this page, not in OBS.</p>
+          </div>
+        </li>
+      </ol>
+      {open && <button className="fr-done" onClick={onDone}>Done</button>}
+    </section>
+  );
+}
+
+function OutputCard({ snap, send, hosted, copied, copyFailed, onCopy, onReplace, replaced }: { snap: ControlSnapshot; send: (m: ControlClientMessage) => boolean; hosted: boolean; copied: boolean; copyFailed: boolean; onCopy: () => void; onReplace: () => void; replaced: boolean }) {
   return (
     <section className="card">
       <h2>Stream output</h2>
@@ -778,18 +926,13 @@ function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlS
         <button className="primary" onClick={onCopy}>{copied ? 'Copied' : 'Copy OBS overlay link'}</button>
         <a href={snap.overlay.url.replace('#view=', '#bg=solid&view=')} target="_blank" rel="noreferrer">Open reading screen</a>
       </div>
-      {copyFailed && (
-        <div className="copy-fallback">
-          <p className="warn">The link couldn’t be copied automatically. Here it is: select it and copy it.</p>
-          <input readOnly value={snap.overlay.url} aria-label="OBS overlay link" autoFocus onFocus={(e) => e.currentTarget.select()} />
-        </div>
-      )}
-      <p className="hint">In OBS: Sources → + → Browser, paste the link, set 1920 × 1080. Leave “Shutdown source when not visible” off. The link can only show ayahs.</p>
+      {copyFailed && <CopyFallback url={snap.overlay.url} />}
+      <p className="hint">In OBS: Sources → + → Browser, paste the link, and set it to your canvas size (any 16:9 size, such as 1920 × 1080). Leave “Shutdown source when not visible” off. The link can only show ayahs.</p>
       <OverlayAppearance style={snap.display.style} sessionEpoch={snap.sessionEpoch} send={send} />
       <label className="row">
         Long translations turn pages
         <select value={snap.display.style.translationPageSeconds} onChange={(e) => send({ type: 'style', patch: { translationPageSeconds: Number(e.target.value) } })}>
-          <option value={0}>only when I press ›</option>
+          <option value={0}>with the recitation (› reads ahead)</option>
           <option value={10}>every 10 s</option>
           <option value={14}>every 14 s</option>
           <option value={20}>every 20 s</option>
@@ -805,9 +948,11 @@ function OutputCard({ snap, send, copied, copyFailed, onCopy }: { snap: ControlS
       <label className="row check-row">
         <input type="checkbox" checked={snap.pinned} onChange={(e) => send({ type: 'pin', on: e.target.checked })} /> Keep the ayah up if the microphone disconnects
       </label>
-      <button className="link" onClick={() => send({ type: 'rotate_view' })}>Replace overlay link (old links stop working)</button>
+      <button className="link" onClick={onReplace}>Replace overlay link (old links stop working)</button>
+      {replaced && <p className="notice" role="status">New overlay link made; the old one no longer works. Copy it above and paste it into your OBS Browser source.</p>}
       <p className="fine">
-        {snap.corpus.verses.toLocaleString()} ayahs · {snap.corpus.chapters} surahs · {snap.corpus.attribution}. Decisions: {snap.setup.jev.detail} Semantic search: {snap.setup.semantic}.
+        {snap.corpus.verses.toLocaleString()} ayahs · {snap.corpus.chapters} surahs · {snap.corpus.attribution}.
+        {hosted ? (snap.display.verse?.glossCredit ? ` ${snap.display.verse.glossCredit}.` : '') : ` Decisions: ${snap.setup.jev.detail} Semantic search: ${snap.setup.semantic}.`}
       </p>
       <p className="fine control-brand">
         <NurraBadge /> <a href={u('/about')}>How and why</a>

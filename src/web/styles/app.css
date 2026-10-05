@@ -121,6 +121,7 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 .control { min-height: 100vh; display: flex; flex-direction: column; }
 .topbar { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-bottom: 1px solid var(--line); background: var(--ink-1); position: sticky; top: 0; z-index: 2; }
 .brand { font-weight: 600; letter-spacing: 0.02em; color: var(--gold); white-space: nowrap; }
+.brand-sub { color: var(--text); font-weight: 500; }
 .conn { margin-left: auto; color: var(--muted); font-size: 13px; white-space: nowrap; }
 
 .status { display: flex; gap: 12px; align-items: center; min-width: 0; }
@@ -136,7 +137,9 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 @media (prefers-reduced-motion: reduce) { .status-seeking .dot { animation: none; } }
 
 .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(360px, 1fr); gap: 22px; padding: 22px 24px 40px; align-items: start; }
-@media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+/* One column: minmax(0, 1fr), not 1fr (= minmax(auto, 1fr)), so the widest control (a long <select>)
+   can never widen the page past a phone's screen. */
+@media (max-width: 1100px) { .grid { grid-template-columns: minmax(0, 1fr); } }
 
 .monitor { position: sticky; top: 88px; }
 @media (max-width: 1100px) { .monitor { position: static; } }
@@ -220,7 +223,7 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 .seg button { padding: 6px 12px; }
 .seg button.on { background: #3a3220; border-color: var(--gold-dim); color: #f6dfa8; }
 .row { display: flex; gap: 10px; align-items: center; margin-top: 12px; font-size: 14px; flex-wrap: wrap; }
-.row select { margin-left: auto; }
+.row select { margin-left: auto; max-width: 100%; min-width: 0; }
 .row input[type='range'] { flex: 1; accent-color: var(--gold); }
 
 .look-heading { display: flex; justify-content: space-between; gap: 12px; margin: 18px 0 8px; font-size: 13px; color: var(--muted); }
@@ -679,6 +682,31 @@ a.about-ref:hover { text-decoration: underline; }
 .r-menu-brand { display: flex; justify-content: center; padding: 10px 0 2px; }
 
 .control-brand { display: flex; align-items: center; gap: 14px; margin-top: 10px; }
+
+/* An empty preview offers a first result; the first run gets the overlay into OBS in three steps. */
+.preview-wrap { position: relative; }
+.empty-guide { position: absolute; inset: 1px; display: grid; place-items: center; padding: 16px; border-radius: 12px; text-align: center; pointer-events: none; }
+.empty-guide > div { max-width: 30rem; pointer-events: auto; }
+.empty-guide h3 { margin: 0 0 6px; font: 650 18px/1.3 var(--ui); color: var(--ivory); }
+.empty-guide p { margin: 0 0 12px; color: var(--muted); font-size: 14px; }
+.empty-guide button { min-height: 44px; }
+@media (max-width: 520px) { .empty-guide p { display: none; } .empty-guide h3 { font-size: 16px; } }
+.first-run { border-color: rgba(207, 170, 98, 0.55); }
+.first-run h2 { margin-bottom: 4px; }
+.steps { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 12px; counter-reset: step; }
+.steps li { display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px; align-items: start; counter-increment: step; }
+.steps li::before { content: counter(step); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--gold-dim); color: var(--gold); font: 650 13px/1 var(--ui); }
+.steps li.done::before { content: '✓'; background: rgba(111, 179, 159, 0.18); border-color: var(--follow); color: var(--follow); }
+.steps p { margin: 2px 0 0; }
+.steps .obs-path { font: 600 13.5px/1.5 var(--ui); color: var(--text); }
+.steps kbd { font: inherit; padding: 1px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--ink-2); }
+.first-run .wait { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+.first-run .wait i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.first-run .wait.ok { color: var(--follow); }
+.first-run .wait.ok i { background: var(--follow); }
+.fr-folded { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between; }
+.fr-folded .wait { margin: 0; }
+.fr-done { margin-top: 12px; }
 .control-brand a:not(.nurra-badge) { color: var(--muted); }
 
 /* Start page, pass 2: the first word revealed with its meaning, a subline, a dock that never
