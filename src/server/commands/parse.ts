@@ -8,9 +8,10 @@ export type Intent =
   | { kind: 'empty' }
   | { kind: 'next' }
   | { kind: 'previous' }
-  | { kind: 'reference'; surah: number; ayah: number | null; route: 'numeric' | 'named_chapter' | 'named_passage' | 'current_chapter' }
+  | { kind: 'reference'; surah: number; ayah: number | null; route: 'numeric' | 'named_chapter' | 'named_passage' | 'current_chapter' | 'position'; position?: 'first' | 'last' }
   | { kind: 'invalid_reference'; message: string }
-  | { kind: 'ambiguous_chapter'; options: ChapterMatch[]; ayah: number | null }
+  /** `last`: each option opens at its own last ayah ("last ayah of surah Fatih"). */
+  | { kind: 'ambiguous_chapter'; options: ChapterMatch[]; ayah: number | null; last?: boolean }
   | { kind: 'division'; type: 'juz' | 'hizb' | 'rub' | 'manzil'; number: number }
   | { kind: 'search'; query: string; scope?: 'surah' | 'ayah' }
   | { kind: 'control'; action: ControlAction };
@@ -110,6 +111,41 @@ function numberAt(t: string[], i: number) {
   return n;
 }
 
+const FIRST = new Set(['first', 'opening']);
+const LAST = new Set(['last', 'final', 'closing']);
+const START = new Set(['beginning', 'start']);
+const END = new Set(['end', 'ending']);
+
+/**
+ * A place named by its position in a surah: "last ayah of Al-Baqarah", "the end of surah Al-Kahf",
+ * "first verse of Al-Mulk", or just "verse of Maryam" (its start). Only an exact surah name is used;
+ * anything else is left to the other readings (never a sound-alike guess).
+ */
+function parsePosition(t: string[], names: ChapterNames): Intent | null {
+  let which: 'first' | 'last' | null;
+  let i: number;
+  if ((FIRST.has(t[0]) || LAST.has(t[0])) && AYAH_WORDS.has(t[1] ?? '') && t[2] === 'of') {
+    which = FIRST.has(t[0]) ? 'first' : 'last';
+    i = 3;
+  } else if ((START.has(t[0]) || END.has(t[0])) && t[1] === 'of') {
+    which = START.has(t[0]) ? 'first' : 'last';
+    i = 2;
+  } else if (AYAH_WORDS.has(t[0]) && t[1] === 'of') {
+    which = null;
+    i = 2;
+  } else return null;
+  if (t[i] === 'the') i++;
+  if (CHAPTER_WORDS.has(t[i] ?? '')) i++;
+  const name = t.slice(i);
+  if (!name.length || name.some((w) => /\d/.test(w))) return null;
+  const matches = names.match(name.join(' '));
+  if (!matches.length) return null;
+  if (!clearWinner(matches)) return { kind: 'ambiguous_chapter', options: matches.slice(0, 5), ayah: which === 'last' ? null : 1, last: which === 'last' };
+  const surah = matches[0].number;
+  if (!which) return validate(surah, null, 'named_chapter', names);
+  return { kind: 'reference', surah, ayah: which === 'first' ? 1 : HAFS_VERSE_COUNTS[surah - 1], route: 'position', position: which };
+}
+
 function validate(surah: number, ayah: number | null, route: Extract<Intent, { kind: 'reference' }>['route'], names: ChapterNames): Intent {
   if (surah < 1 || surah > 114) return { kind: 'invalid_reference', message: `There is no surah ${surah}. Surahs are numbered 1 to 114.` };
   const count = HAFS_VERSE_COUNTS[surah - 1];
@@ -154,6 +190,9 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
       return validate(s, a, 'named_passage', names);
     }
   }
+
+  const position = parsePosition(t, names);
+  if (position) return position;
 
   // Optional trailing "(ayah|verse) N" or bare N.
   const readAyah = (i: number): { ayah: number | null; ok: boolean } => {
@@ -200,7 +239,10 @@ export function parseIntent(text: string, names: ChapterNames, currentSurah: num
   }
 
   // Bare chapter name, optionally followed by an ayah: "baqarah 255", "yaseen", "al kahf verse 10".
+  // A name never contains digits: name keys ignore them, so "kahf 10" would otherwise match Al-Kahf
+  // as a whole and lose its ayah.
   for (let len = Math.min(3, t.length); len >= 1; len--) {
+    if (t.slice(0, len).some((w) => /\d/.test(w))) continue;
     const rest = readAyah(len);
     if (!rest.ok) continue;
     const matches = names.match(t.slice(0, len).join(' '));

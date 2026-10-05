@@ -143,13 +143,17 @@ export class CommandResolver {
       case 'reference': {
         const ch = this.corpus.chapter(intent.surah)!;
         const ayah = intent.ayah ?? 1;
-        const note = intent.ayah === null ? `Surah ${ch.nameSimple} starts at ${intent.surah}:1.` : intent.route === 'named_passage' ? `Named passage → ${intent.surah}:${ayah}.` : null;
+        const note = intent.ayah === null ? `Surah ${ch.nameSimple} starts at ${intent.surah}:1.`
+          : intent.route === 'named_passage' ? `Named passage → ${intent.surah}:${ayah}.`
+          : intent.route === 'position' ? `The ${intent.position ?? 'first'} ayah of Surah ${ch.nameSimple} is ${intent.surah}:${ayah}.`
+          : null;
         return { kind: 'navigate', key: `${intent.surah}:${ayah}`, note };
       }
       case 'division': {
         const d = this.catalog?.division(intent.type, intent.number) ?? null;
         if (!d) {
-          return { kind: 'invalid_reference', message: `${intent.type[0].toUpperCase()}${intent.type.slice(1)} boundaries are not imported yet (QUL quran-metadata export). Use a surah and ayah instead.` };
+          // The boundaries are a resource that is not imported on this server: say so plainly.
+          return { kind: 'invalid_reference', message: `${intent.type[0].toUpperCase()}${intent.type.slice(1)} navigation isn’t available yet. Try a surah and ayah, like “Al-Kahf 10”.` };
         }
         const v = this.corpus.at(d.firstIndex)!;
         return { kind: 'navigate', key: v.key, note: `${intent.type[0].toUpperCase()}${intent.type.slice(1)} ${intent.number} starts at ${v.key}.` };
@@ -183,8 +187,8 @@ export class CommandResolver {
 
   /**
    * An ayah named by how it begins, in English letters. Only for queries that are not ordinary
-   * English (a meaning search never jumps the screen); a single clear match navigates, several are
-   * offered.
+   * English (a meaning search never jumps the screen). Only one exact opening navigates: a near
+   * sound is a guess ("al baqarah" is a near sound of 2:256's opening), so near matches are offered.
    */
   private byOpeningSound(query: string): CommandResult | null {
     if (!this.sounds) return null;
@@ -192,17 +196,20 @@ export class CommandResolver {
     if (words.some((w) => ENGLISH_CUES.has(w))) return null;
     const m = this.sounds.match(query);
     if (!m.length) return null;
-    const clear = m[0].distance === 0 ? m.length === 1 || m[1].distance > 0 : m.length === 1;
-    if (clear) {
+    const exact = m[0].distance === 0;
+    if (exact && (m.length === 1 || m[1].distance > 0)) {
       const v = this.corpus.at(m[0].verseIndex)!;
       return { kind: 'navigate', key: v.key, note: `${v.key} begins with those words.` };
     }
     const cards = m.slice(0, 5).map((x) => this.card(x.verseIndex, ['how it sounds']));
-    return { kind: 'candidates', route: 'search', query, cards, confirmedKey: null, status: 'These ayahs begin with those words.', refining: false };
+    return { kind: 'candidates', route: 'search', query, cards, confirmedKey: null, status: exact ? 'These ayahs begin with those words.' : 'These ayahs begin with a similar sound. Choose one if it’s the one you meant.', refining: false };
   }
 
   private async ambiguousChapter(text: string, intent: Extract<Intent, { kind: 'ambiguous_chapter' }>, currentKey: string | null, signal?: AbortSignal): Promise<CommandResult> {
-    const keys = intent.options.map((o) => `${o.number}:${Math.min(intent.ayah ?? 1, this.corpus.chapter(o.number)!.verseCount)}`);
+    const keys = intent.options.map((o) => {
+      const count = this.corpus.chapter(o.number)!.verseCount;
+      return `${o.number}:${intent.last ? count : Math.min(intent.ayah ?? 1, count)}`;
+    });
     let confirmedKey: string | null = null;
     let status = 'Several surah names match; choose one.';
     if (this.client) {

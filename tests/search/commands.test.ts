@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CommandResolver } from '../../src/server/commands/reducer';
 import { parseNumberAt } from '../../src/server/search/references';
+import { Transliteration } from '../../src/server/search/transliteration';
 import { fullCorpus } from '../helpers';
 
 const resolver = () => new CommandResolver(fullCorpus().corpus, null, null);
@@ -75,6 +76,70 @@ describe('command intents (local, deterministic)', () => {
     expect(res.cards.map((c) => c.key)).toContain('2:286');
     const { corpus } = fullCorpus();
     for (const c of res.cards) expect(c.english).toBe(corpus.verse(c.key)!.english);
+  });
+});
+
+describe('a surah name followed by an ayah number opens that ayah', () => {
+  const r = resolver();
+  it.each([
+    ['Kahf 10', '18:10'],
+    ['Al-Kahf 10', '18:10'],
+    ['Maryam 3', '19:3'],
+    ['Baqarah 286', '2:286'],
+    ['baqarah 255', '2:255'],
+    ['Rahman 13', '55:13'],
+    ['Ya-Sin 12', '36:12'],
+    ['Al Imran 190', '3:190'],
+    ['al kahf verse 10', '18:10'],
+    ['kahf ten', '18:10'],
+  ])('%s → %s', async (text, key) => {
+    expect(await r.resolve(text, null)).toMatchObject({ kind: 'navigate', key, note: null });
+  });
+
+  it('a name alone opens the surah and says where it starts', async () => {
+    expect(await r.resolve('yaseen', null)).toMatchObject({ kind: 'navigate', key: '36:1', note: 'Surah Ya-Sin starts at 36:1.' });
+  });
+});
+
+describe('the first or last ayah of a surah', () => {
+  const { corpus } = fullCorpus();
+  const r = new CommandResolver(corpus, null, null, null, Transliteration.load(corpus));
+  it.each([
+    ['last ayah of Al-Baqarah', '2:286'],
+    ['the last verse of surah baqarah', '2:286'],
+    ['go to the final ayah of al kahf', '18:110'],
+    ['end of surah Al-Kahf', '18:110'],
+    ['first ayah of Al-Mulk', '67:1'],
+    ['beginning of Maryam', '19:1'],
+  ])('%s → %s', async (text, key) => {
+    expect(await r.resolve(text, null)).toMatchObject({ kind: 'navigate', key });
+  });
+
+  it('says what it understood', async () => {
+    expect(await r.resolve('last ayah of Al-Baqarah', null)).toMatchObject({ note: 'The last ayah of Surah Al-Baqarah is 2:286.' });
+    expect(await r.resolve('verse of al baqarah', null)).toMatchObject({ kind: 'navigate', key: '2:1', note: 'Surah Al-Baqarah starts at 2:1.' });
+  });
+
+  it('offers each surah when the name is unclear, at its last ayah', async () => {
+    const res = await r.resolve('last ayah of surah fatih', null);
+    expect(res.kind).toBe('candidates');
+    if (res.kind === 'candidates') expect(res.cards.map((c) => c.key).sort()).toEqual(['1:7', '35:45', '48:29']);
+  });
+});
+
+describe.skipIf(!Transliteration.load(fullCorpus().corpus))('ayahs named by how they sound', () => {
+  const { corpus } = fullCorpus();
+  const r = new CommandResolver(corpus, null, null, null, Transliteration.load(corpus));
+  it('jumps only on an exact opening; a near sound is offered as a choice, never shown on its own', async () => {
+    expect(await r.resolve('go to inna fatahna', null)).toMatchObject({ kind: 'navigate', key: '48:1' });
+    expect(await r.resolve('Bismillahirrahmanirrahim', null)).toMatchObject({ kind: 'navigate', key: '1:1' });
+    // "al baqarah" sounds like the opening of 2:256 (lā ikrāha) to the consonant matcher: one near match.
+    const near = await r.resolve('ayah about al baqarah', null);
+    expect(near.kind).toBe('candidates');
+    if (near.kind === 'candidates') {
+      expect(near.confirmedKey).toBeNull();
+      expect(near.status).not.toContain('begins with those words');
+    }
   });
 });
 
