@@ -101,6 +101,9 @@ The sections below are for contributors: how following works, commands, and what
 
 ## Development
 
+Before push, follow [local verification and hosted exceptions](docs/LOCAL_VERIFICATION.md).
+Routine checks run on the owner's PCs; GitHub CI is an explicit platform/release check.
+
 For development with hot reload: `npm run dev` (backend + Vite on `http://127.0.0.1:5173`; open the printed control link with port 5173).
 
 ### Listening and decisions (optional keys)
@@ -186,7 +189,7 @@ Set `QO_DIAGNOSTIC_CAPTURE=1` to write recognized text tokens (never audio) to `
 
 | Evidence layer | Status |
 |---|---|
-| Source and tests | 197 unit/integration tests, typecheck, production build and 10 browser tests pass locally. Includes anonymous access, shared funding, signed donation idempotency, relay ownership, persistent cooldowns, browser SDK audio through a stand-in provider, load recovery and the silence skipper. Check CI on the deployment commit; see [the final review](docs/FINAL_REVIEW.md) for evidence boundaries. |
+| Source and tests | 197 unit/integration tests, typecheck, production build and 10 browser tests pass locally. Includes anonymous access, shared funding, signed donation idempotency, relay ownership, persistent cooldowns, browser SDK audio through a stand-in provider, load recovery and the silence skipper. Check recorded local verification and any explicitly dispatched CI on the deployment commit; see [the final review](docs/FINAL_REVIEW.md) for evidence boundaries. |
 | Hosted at a path | The hosted site under `/quran-reader` was run and checked in a browser (every request under the prefix, live connection, OBS link). The Cloudflare Worker that puts it at nurra.org/quran-reader has not run yet. |
 | Corpus | 25/25 validation checks; all 6,236 ayahs present in display, search and English with matching keys. |
 | Replay (synthetic) | 19 hand-authored scenarios over real corpus text, three modes: deterministic 0 wrong displays, 168/178 ayahs shown; hybrid identical with a *simulated* decider; jev_required 0 wrong but slower (see `docs/BENCHMARK.md`). Streams use assumed provider timing and error rates. |
