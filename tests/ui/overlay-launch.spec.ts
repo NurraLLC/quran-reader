@@ -39,8 +39,16 @@ test('reading screen, hide fade, shaded text edge and the transparent hint', asy
   await page.getByRole('radiogroup', { name: 'Reading view' }).getByRole('radio', { name: 'Follow words' }).click();
   await expect(obs.locator('.stage')).toHaveAttribute('data-reading', 'follow');
   expect(await obs.locator('.panel').evaluate((el) => [getComputedStyle(el).transitionProperty, getComputedStyle(el).transitionDuration])).toEqual(['opacity', '0.22s']);
+  // The credit fades with the ayah instead of vanishing a frame before it.
+  await page.getByRole('button', { name: 'Hide from stream' }).click();
+  await expect(obs.locator('.panel')).toHaveClass(/panel-off/);
+  await expect(obs.locator('.stage-credit')).toHaveClass(/stage-credit-off/);
+  expect(await obs.locator('.stage-credit').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0.22s');
+  await page.getByRole('button', { name: 'Unhide' }).click();
+  await expect(obs.locator('.stage-credit')).not.toHaveClass(/stage-credit-off/);
   await obs.emulateMedia({ reducedMotion: 'reduce' });
   expect(await obs.locator('.panel').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
+  expect(await obs.locator('.stage-credit').evaluate((el) => getComputedStyle(el).transitionDuration)).toBe('0s');
 
   // Shaded panel: the text carries its own dark edge.
   await page.getByRole('radiogroup', { name: 'Background' }).getByRole('radio', { name: 'Shaded panel' }).click();

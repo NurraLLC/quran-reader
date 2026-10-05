@@ -596,9 +596,10 @@ export function VerseDisplay({
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : (heldText ?? displayWords[0] ?? '');
   return (
     <div ref={stageRef} className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-position={state.style.captionPosition} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={{ ...panelSize, ...(!frame ? accentVars(state.style.accent) : {}), '--caption-inset': `${state.style.captionInset}px`, '--panel-opacity': state.style.panelOpacity } as React.CSSProperties}>
-      {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off; the stream scene credits Nurra itself). */}
-      {visible && state.style.credit !== false && !frame && (
-        <div className="stage-credit" aria-label="Quran Overlay by Nurra">
+      {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off; the stream scene credits Nurra itself).
+          Hiding fades it with the ayah instead of cutting it a frame early. */}
+      {!!plan && !!v && state.style.credit !== false && !frame && (
+        <div className={`stage-credit${visible ? '' : ' stage-credit-off'}`} aria-label="Quran Overlay by Nurra" aria-hidden={!visible || undefined}>
           <span>Quran Overlay by</span>
           <span className="stage-credit-mark">
             <NurraWordmark height={15} />

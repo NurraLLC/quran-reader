@@ -845,6 +845,9 @@ a.about-ref:hover { text-decoration: underline; }
 /* "Quran Overlay by Nurra": small and quiet, in the corner away from the text, on a dark pill like
    the meaning so it stays readable where the shading has faded and over bright footage. */
 .stage-credit { position: absolute; right: 36px; bottom: 28px; z-index: 3; display: flex; align-items: center; gap: 10px; padding: 5px 5px 5px 14px; border-radius: 999px; background: rgba(9, 19, 23, 0.72); font: 500 17px/1 var(--ui); color: rgba(244, 236, 218, 0.92); pointer-events: none; }
+.stage-credit { transition: opacity 220ms ease; }
+.stage-credit-off { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .stage-credit { transition: none; } }
 .stage-credit-mark { display: inline-flex; padding: 5px 9px 5px; border-radius: 7px; background: #062194; color: #fff7b2; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
 .stage[data-layout='lowerthird'] .stage-credit { top: 28px; bottom: auto; }
 
