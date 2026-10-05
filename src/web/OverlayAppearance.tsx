@@ -77,6 +77,7 @@ export function OverlayAppearance({ style: s, sessionEpoch, send }: { style: Dis
       </>}
       {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (background) => change({ background }))}
       {s.background === 'scrim' && slider('Panel shading', 'panelOpacity', 0.2, 1, 0.04)}
+      {s.background === 'transparent' && <p className="hint">Transparent suits dark or mid-tone footage. Over a bright camera (a white wall, a window, daylight), choose Shaded panel: transparent text cannot stay readable on white.</p>}
       <details className="appearance-details">
         <summary>Text size, colour and details</summary>
         {slider('Arabic size', 'arabicScale', 0.8, 1.25, 0.05, s.language === 'english')}

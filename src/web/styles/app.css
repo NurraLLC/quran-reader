@@ -21,6 +21,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 html[data-surface='overlay'], html[data-surface='overlay'] body { background: transparent; overflow: hidden; }
+html[data-surface='overlay'][data-bg='solid'], html[data-surface='overlay'][data-bg='solid'] body { background: #081115; }
 html[data-surface='control'] body { background: var(--ink-0); color: var(--text); font: 15px/1.45 var(--ui); }
 
 /* ---------------- stage (1920×1080, scaled by StageFrame) ---------------- */
@@ -53,7 +54,10 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
   border-radius: 20px;
   pointer-events: none;
 }
-.stage[data-bg='transparent'] .verse { text-shadow: 0 2px 14px rgba(0, 0, 0, 0.9), 0 0 3px rgba(0, 0, 0, 0.95); }
+/* Transparent look: a 1 px dark outline (subtitle style) under the soft shadow; the soft shadow alone
+   washes out to a grey glow on white. Still not reliable over bright footage: the control page says
+   to use the shaded panel there (A10-02). */
+.stage[data-bg='transparent'] .verse { text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.85), -1px 1px 0 rgba(0, 0, 0, 0.85), 1px -1px 0 rgba(0, 0, 0, 0.85), -1px -1px 0 rgba(0, 0, 0, 0.85), 0 0 3px rgba(0, 0, 0, 0.95), 0 2px 14px rgba(0, 0, 0, 0.9); }
 
 .verse { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 44px 56px 34px; }
 .stage[data-layout='lowerthird'] .verse { padding: 26px 56px 18px; }
@@ -64,7 +68,8 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 /* Room under each Arabic line for the recited word's meaning (VerseDisplay's meaningBand; 0 when no
    meaning is shown), so the pill never covers the tops of the next line's words. */
 .arabic .line + .line { margin-top: var(--meaning-band, 0px); }
-.stage:not([data-reading='ayah']) .panel { border-radius: 0; box-shadow: none; transition: none; }
+/* Hide and unhide fade (220 ms) in every reading mode; reduced motion cuts (A10-08). */
+.stage:not([data-reading='ayah']) .panel { border-radius: 0; box-shadow: none; }
 .stage:not([data-reading='ayah']) .panel::before { display: none; }
 .stage[data-reading='follow'][data-bg='scrim'] .panel,
 .stage[data-reading='word'][data-bg='scrim'] .panel { background: linear-gradient(180deg, transparent, rgba(9,19,23,var(--panel-opacity, .72)) 28%, rgba(9,19,23,var(--panel-opacity, .72)) 76%, transparent); }
@@ -150,6 +155,8 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
   background: repeating-conic-gradient(#10191c 0% 25%, #0d1518 0% 50%) 50% / 28px 28px; }
 .preview-light { background: linear-gradient(140deg, #fff8da 0 32%, #c1dbea 32% 62%, #f0f4f0 62%); }
 .preview-dark { background: linear-gradient(145deg, #060b16, #273959 58%, #101721); }
+/* The hardest case a camera gives: pure white (a bright wall, a window). */
+.preview-white { background: #ffffff; }
 .preview-loading { width: 1920px; height: 1080px; display: grid; place-items: center; color: var(--muted); font-size: 32px; }
 .preview-environment { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 10px 0 0; color: var(--muted); font-size: 12px; }
 .preview-environment button { padding: 5px 9px; font-size: 12px; }
@@ -607,6 +614,23 @@ details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 1
 .stage[data-layout='lowerthird'][data-position='top'][data-reading='follow'][data-bg='scrim'] .panel::after {
   inset: calc(0px - var(--caption-inset, 56px)) -120px -260px;
   background: radial-gradient(ellipse 66% 62% at 50% 24%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.16667)) 0%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * .97222)) 50%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * .41667)) 78%, rgba(9, 19, 23, 0) 100%);
+}
+/* Legibility over bright footage (A10-02, measured over pure white: Stream captions Arabic 1.8 -> 5.2:1,
+   first translation line 3.8 -> 6.1:1; Reading first Arabic line 2.4 -> 5.0:1; no hard edge added).
+   Shaded look: a soft dark edge on the text itself, so a line near the shading's faded rim still reads. */
+.stage[data-bg='scrim'] .verse { text-shadow: 0 0 2px rgba(9, 19, 23, 0.9), 0 1px 12px rgba(9, 19, 23, 0.7); }
+/* Full frame, following: a wider dense centre (the first and last lines of long ayahs sat on the fade). */
+.stage[data-reading='follow'][data-bg='scrim'] .panel::after,
+.stage[data-reading='word'][data-bg='scrim'] .panel::after {
+  background: radial-gradient(ellipse 72% 76% at 50% 50%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.16667)) 0%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.05)) 58%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * .5)) 84%, rgba(9, 19, 23, 0) 100%);
+}
+/* Lower third, following: the shading centred on the text block (it peaked under the translation, 76%
+   down); same layer, still fully faded before its top edge. */
+.stage[data-layout='lowerthird'][data-reading='follow'][data-bg='scrim'] .panel::after {
+  background: radial-gradient(ellipse 66% 60% at 50% 60%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.16667)) 0%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.02)) 55%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * .42)) 82%, rgba(9, 19, 23, 0) 100%);
+}
+.stage[data-layout='lowerthird'][data-position='top'][data-reading='follow'][data-bg='scrim'] .panel::after {
+  background: radial-gradient(ellipse 66% 60% at 50% 40%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.16667)) 0%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * 1.02)) 55%, rgba(9, 19, 23, calc(var(--panel-opacity, .72) * .42)) 82%, rgba(9, 19, 23, 0) 100%);
 }
 .stage[data-bg='transparent'] .sb-frame { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.75)); }
 .stage[data-bg='transparent'] .sb-ar { color: #f6e3b4; }

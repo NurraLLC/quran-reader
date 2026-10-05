@@ -30,6 +30,9 @@ export function Overlay() {
 
   useEffect(() => {
     document.documentElement.dataset.surface = 'overlay';
+    // A reading screen on a display that is not 16:9 letterboxes the stage: in the stage's own colour,
+    // never the page's white (OBS output, without bg, stays transparent).
+    if (bg === 'solid') document.documentElement.dataset.bg = 'solid';
     if (!view) {
       setDenied(true);
       return;

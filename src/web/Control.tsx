@@ -82,7 +82,7 @@ export function Control() {
   const [obsSeen, setObsSeen] = useState(() => { try { return localStorage.getItem('qo.obsSeen') === '1'; } catch { return false; } });
   const [firstRunDone, setFirstRunDone] = useState(false);
   const obsSeenAtLoad = useRef(obsSeen);
-  const [backdrop, setBackdrop] = useState<'grid' | 'light' | 'dark'>('grid');
+  const [backdrop, setBackdrop] = useState<'grid' | 'light' | 'white' | 'dark'>('grid');
   const fontsReady = useFontsReady();
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
@@ -388,7 +388,7 @@ export function Control() {
           </div>
           <div className="preview-environment" role="radiogroup" aria-label="Preview backdrop">
             <span>Check over</span>
-            {([['grid', 'Transparency grid'], ['light', 'Light'], ['dark', 'Dark']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={backdrop === value} className={backdrop === value ? 'on' : ''} onClick={() => setBackdrop(value)}>{label}</button>)}
+            {([['grid', 'Transparency grid'], ['light', 'Light'], ['white', 'White'], ['dark', 'Dark']] as const).map(([value, label]) => <button key={value} role="radio" aria-checked={backdrop === value} className={backdrop === value ? 'on' : ''} onClick={() => setBackdrop(value)}>{label}</button>)}
             <span className="hint">Preview only</span>
           </div>
           {previewMode === 'stream' && <p className="hint">This is the full OBS scene. Page controls match its reading panel. Layout, shading and highlight colour settings below apply to the plain overlay.</p>}
