@@ -128,6 +128,8 @@ test.describe('reading on by hand', () => {
       await page.getByRole('radio', { name: lang, exact: true }).click();
       await expect(page.getByRole('radio', { name: lang, exact: true })).toHaveAttribute('aria-checked', 'true');
       expectSamePlace(await place(page), before);
+      await page.waitForTimeout(500); // and it stays there (nothing adjusts the page afterwards)
+      expectSamePlace(await place(page), before);
     }
     await page.getByRole('button', { name: /^Menu/ }).click();
     await page.getByRole('button', { name: /^Reading appearance/ }).click();
