@@ -97,8 +97,10 @@ test('largest text keeps every word of the longest ayah across pages', async ({ 
   const url = await card.getByRole('link', { name: 'Open reading screen' }).getAttribute('href');
   const audience = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
   await audience.goto(url!);
-  await expect(audience.locator('.stage')).toHaveAttribute('data-layout', 'fullframe');
-  await expect(c.getByText(/Too long for the lower third/)).toBeVisible();
+  // The caption band keeps the camera visible: the ayah pages inside it instead of taking the full frame.
+  await expect(audience.locator('.stage')).toHaveAttribute('data-layout', 'lowerthird');
+  await expect(audience.locator('.cont-ar')).toBeVisible();
+  await expect(c.getByText(/Too long for the lower third/)).toHaveCount(0);
   const expected = await (await c.request.get('/api/verse/2:282')).json();
   for (const language of ['Arabic + English', 'English']) {
     await c.getByRole('radiogroup', { name: 'Language' }).getByRole('radio', { name: language, exact: true }).click();
@@ -117,9 +119,10 @@ test('largest text keeps every word of the longest ayah across pages', async ({ 
     }
     expect(words.join(' ').replace(/\s+/g, ' ').trim()).toBe(expected.english.replace(/\s+/g, ' ').trim());
   }
-  // Arabic only also keeps a full-frame paged display at the largest size.
+  // Arabic only also pages inside the caption band at the largest size.
   await c.getByRole('radiogroup', { name: 'Language' }).getByRole('radio', { name: 'Arabic', exact: true }).click();
   await expect(audience.locator('.english')).toHaveCount(0);
+  await expect(audience.locator('.stage')).toHaveAttribute('data-layout', 'lowerthird');
   const pages = Number((await audience.locator('.cont-ar').innerText()).match(/\/(\d+)/)![1]);
   const arabicPager = c.locator('.pager > span', { hasText: /^Arabic/ });
   const arabic: string[] = [];

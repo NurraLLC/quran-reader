@@ -850,6 +850,8 @@ a.about-ref:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .stage-credit { transition: none; } }
 .stage-credit-mark { display: inline-flex; padding: 5px 9px 5px; border-radius: 7px; background: #062194; color: #fff7b2; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35); }
 .stage[data-layout='lowerthird'] .stage-credit { top: 28px; bottom: auto; }
+/* Captions at the top: the credit takes the bottom corner (a band paging a long ayah fills to its top). */
+.stage[data-layout='lowerthird'][data-position='top'] .stage-credit { top: auto; bottom: 28px; }
 
 /* Stream colour swatches on the control page. */
 .accent-row { align-items: center; }

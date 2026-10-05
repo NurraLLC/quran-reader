@@ -50,6 +50,36 @@ const pageOf = async (page: Page, selector: string): Promise<[number, number]> =
   return m ? [Number(m[1]), Number(m[2])] : [1, 1];
 };
 
+/** The small credit pill never covers text (it takes the corner away from the captions). */
+async function creditClear(page: Page) {
+  const hits = await page.evaluate(() => {
+    const credit = document.querySelector('.stage-credit')?.getBoundingClientRect();
+    if (!credit) return ['no credit shown'];
+    return [...document.querySelectorAll('.arabic .line, .english .line, .cont, .reference')].filter((n) => {
+      const r = document.createRange(); r.selectNodeContents(n); const b = r.getBoundingClientRect();
+      return b.right > credit.left && b.left < credit.right && b.bottom > credit.top && b.top < credit.bottom;
+    }).map((n) => n.className);
+  });
+  expect(hits).toEqual([]);
+}
+
+/** Every visible text box of the stage stays inside its panel, and nothing covers the reference. */
+async function keptInPanel(page: Page) {
+  const problems = await page.locator('.panel-on').evaluate((panel) => {
+    const box = panel.getBoundingClientRect();
+    const text = (el: Element) => { const r = document.createRange(); r.selectNodeContents(el); return r.getBoundingClientRect(); };
+    const nodes = [...panel.querySelectorAll('.arabic .line, .english .line, .cont, .reference')];
+    const out = nodes.filter((n) => { const r = n.getBoundingClientRect(); return r.top < box.top - 2 || r.bottom > box.bottom + 2 || r.left < box.left - 2 || r.right > box.right + 2; }).map((n) => `outside: ${n.className}`);
+    const ref = panel.querySelector('.reference')?.getBoundingClientRect();
+    if (ref) for (const n of panel.querySelectorAll('.arabic .line, .english .line, .cont, .gloss')) {
+      const r = n.classList.contains('cont') ? text(n) : n.getBoundingClientRect();
+      if (r.bottom > ref.top + 1 && r.top < ref.bottom - 1 && r.right > ref.left && r.left < ref.right) out.push(`covers the reference: ${n.className}`);
+    }
+    return out;
+  });
+  expect(problems).toEqual([]);
+}
+
 test('reader appearance is remembered on this device and does not change the broadcast', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 320, height: 740 }, reducedMotion: 'reduce' });
   const c = await context.newPage();
@@ -194,6 +224,95 @@ test('every audience renderer turns its own translation pages with the recitatio
   await expect(scene.locator('.english .cont')).toHaveText(`Translation ${sceneTotal}/${sceneTotal}`);
   await expect(overlay.locator('.english .cont')).toHaveText(`Translation ${overlayTotal}/${overlayTotal}`);
   await send({ type: 'page', region: 'english', page: 0 });
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
+test('Stream captions page a long ayah inside the caption band instead of covering the camera', async ({ browser }) => {
+  test.setTimeout(150_000);
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const c = await context.newPage();
+  const errors: string[] = [];
+  c.on('pageerror', (e) => errors.push(e.message));
+  await c.goto(`/control#owner=${OWNER}`);
+  await c.getByRole('button', { name: /^Stream captions/ }).click();
+  await request(c, '2:255');
+  const readingUrl = await c.getByRole('link', { name: 'Open reading screen' }).getAttribute('href');
+  const outputs: Page[] = [];
+  for (const url of [readingUrl!.replace('#bg=solid&', '#'), readingUrl!]) {
+    const p = await context.newPage();
+    await p.setViewportSize({ width: 1920, height: 1080 });
+    p.on('pageerror', (e) => errors.push(e.message));
+    await p.goto(url);
+    outputs.push(p);
+  }
+  const [overlay, reading] = outputs;
+  const send = await controlSocket(c);
+  await send({ type: 'style', patch: { translationPageSeconds: 0 } });
+  const { toQpcHafsEncoding } = await import('../../src/shared/display-encoding');
+  const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
+  for (const key of ['2:255', '2:282']) {
+    await request(c, key);
+    for (const p of outputs) {
+      await expect(p.locator('.verse')).toHaveAttribute('aria-label', new RegExp(`${key}$`));
+      await expect(p.locator('.stage')).toHaveAttribute('data-layout', 'lowerthird');
+    }
+    await expect(c.locator('.warn', { hasText: 'Too long for the lower third' })).toHaveCount(0);
+    const source = await (await c.request.get(`/api/verse/${key}`)).json();
+    // Every Arabic word, page by page, in order.
+    const [, arPages] = await pageOf(reading, '.cont-ar');
+    expect(arPages).toBeGreaterThan(1);
+    const arabic: string[] = [];
+    for (let i = 0; i < arPages; i++) {
+      await send({ type: 'page', region: 'arabic', page: i });
+      for (const p of outputs) await expect(p.locator('.cont-ar')).toHaveAttribute('aria-label', `Arabic part ${i + 1} of ${arPages}`);
+      await expect(overlay.locator('.stage')).toHaveAttribute('data-layout', 'lowerthird');
+      arabic.push((await reading.locator('.quran-word').allTextContents()).join(' '));
+      for (const p of outputs) await keptInPanel(p);
+    }
+    expect(norm(arabic.join(' '))).toBe(norm(toQpcHafsEncoding(source.arabic)));
+    await send({ type: 'arabic_auto' });
+    // The whole translation, page by page.
+    const [, enPages] = await pageOf(reading, '.english .cont');
+    const english: string[] = [];
+    for (let i = 0; i < enPages; i++) {
+      await send({ type: 'page', region: 'english', page: i });
+      await expect(reading.locator('.english .cont')).toContainText(`Translation ${i + 1}/${enPages}`);
+      english.push((await reading.locator('.english .line').allTextContents()).join(' '));
+      for (const p of outputs) await keptInPanel(p);
+    }
+    expect(norm(english.join(' '))).toBe(norm(source.english));
+    await send({ type: 'page', region: 'english', page: 0 });
+    mkdirSync('test-results/product-pass', { recursive: true });
+    await reading.screenshot({ path: `test-results/product-pass/captions-${key.replace(':', '-')}.png` });
+  }
+  // Reciting 2:255: the band never gives way to the full frame; Arabic and translation pages follow.
+  const layouts = new Set<string>();
+  const arabicSeen: number[] = [];
+  const englishSeen: number[] = [];
+  await recite(send, '2:255', async () => {
+    layouts.add((await overlay.locator('.stage').getAttribute('data-layout')) ?? '');
+    const [a] = await pageOf(overlay, '.cont-ar');
+    const [e] = await pageOf(overlay, '.english .cont');
+    if (arabicSeen.at(-1) !== a) arabicSeen.push(a);
+    if (englishSeen.at(-1) !== e) englishSeen.push(e);
+  });
+  expect([...layouts]).toEqual(['lowerthird']);
+  const [, arTotal] = await pageOf(overlay, '.cont-ar');
+  const [, enTotal] = await pageOf(overlay, '.english .cont');
+  expect(arabicSeen).toEqual(Array.from({ length: arTotal }, (_, i) => i + 1));
+  expect(englishSeen).toEqual(Array.from({ length: enTotal }, (_, i) => i + 1));
+  // Captions at the top, nearest the edge: a paged band fills to its top, so the credit takes the bottom corner.
+  await send({ type: 'style', patch: { captionPosition: 'top', captionInset: 24 } });
+  await request(c, '2:282');
+  for (const p of outputs) {
+    await expect(p.locator('.stage')).toHaveAttribute('data-position', 'top');
+    await expect(p.locator('.verse')).toHaveAttribute('aria-label', /2:282$/);
+    await keptInPanel(p);
+    await creditClear(p);
+  }
+  await reading.screenshot({ path: 'test-results/product-pass/captions-top-2-282.png' });
+  await c.getByRole('button', { name: /^Reading/ }).click();
   expect(errors).toEqual([]);
   await context.close();
 });

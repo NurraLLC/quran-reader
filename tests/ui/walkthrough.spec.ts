@@ -82,8 +82,9 @@ test('broadcaster walkthrough without a microphone', async ({ browser }) => {
   await r.waitForFunction(() => document.querySelector('.panel-on .verse')?.getAttribute('aria-label')?.endsWith('2:282'));
   await c.waitForSelector('.pager');
   await r.waitForTimeout(300);
-  await shot('long-verse-promoted');
-  check(await c.locator('.warn', { hasText: 'Too long for the lower third' }).isVisible(), 'control explains the lower-third promotion');
+  await shot('long-verse-in-caption-band');
+  check((await r.locator('.stage').getAttribute('data-layout')) === 'lowerthird', 'a long ayah pages inside the lower third (the camera stays visible)');
+  check(!(await c.locator('.warn', { hasText: 'Too long for the lower third' }).isVisible()), 'no full-frame takeover for a long ayah');
   await c.locator('.pager span', { hasText: 'Translation page' }).getByRole('button', { name: '›' }).click();
   await r.waitForTimeout(400);
   await shot('long-verse-translation-page-2');

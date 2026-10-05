@@ -212,6 +212,12 @@ type Plan = {
   /** A passage's translation box keeps the height of its longest translation (each ayah shows its own);
    *  a paged translation keeps the height of its fullest page, so turning a page never moves the Arabic. */
   englishMinH: number | null;
+  /** Paged in the caption band: the Arabic keeps the height of its fullest page (null = natural). */
+  arabicMinH: number | null;
+  /** Paged in the caption band: the Arabic marker's top margin (it sits below the room kept for the
+   *  recited word's meaning) and the translation's top margin. null = the stylesheet's. */
+  arabicMarkTop: number | null;
+  englishTop: number | null;
   /** Space between Arabic lines for the recited word's meaning (0 when no meaning is shown). */
   band: number;
   /** Short-ayah passage: for each Arabic word, which grouped ayah it belongs to, its index in that
@@ -277,6 +283,13 @@ const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
 /** A continuation marker (.cont): its 6px top margin, then its 19px line at 1.2. */
 const MARK_TOP = 6;
 const MARK_H = MARK_TOP + 23;
+/**
+ * Paging inside the caption band (lower third), in the stylesheet's px: the verse's content height
+ * (.panel 398 less its 26 + 18 padding), the reference row (22 margin + 44), the translation's top
+ * margin (and the 44 that keeps room for the recited word's meaning above it), and the paging sizes at
+ * scale 1, above the band's smallest fitted sizes (Arabic 46, English 26, English only 30).
+ */
+const BAND = { height: 354, refH: 66, gap: 16, meaningGap: 44, ar: 50, en: 28, enOnly: 32 };
 /** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
 const NEXT_H = 160;
 /** Height the surah banner takes on a surah's opening screen (full frame only). */
@@ -353,6 +366,9 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
     next,
     nextRoom: room ? nextRoomH(nextPx(fit.a), AR_LH) : null,
     englishMinH: group && fit.enLines ? Math.ceil(fit.enLines * fit.e * EN_LH) : null,
+    arabicMinH: null,
+    arabicMarkTop: null,
+    englishTop: null,
     band: band(fit.a),
     wordMeta,
     enMeta: null,
@@ -373,7 +389,48 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
     if (group) return planFor(state, false, geo);
     const fit = tryFit(geo.lower, Math.round(62 * scale), Math.round(46 * scale), Math.round(30 * state.style.englishScale), Math.round(26 * state.style.englishScale));
     if (fit) return single(fit, 'lowerthird', false);
+    // Too long for the band at its smallest sizes: it pages inside the band, so the camera stays in
+    // view. With a translation, one Arabic line per page (turned by the recitation, as on the full
+    // frame) over as many translation lines as the band holds; Arabic alone takes as many lines as fit.
+    const a = Math.round(BAND.ar * scale);
+    const e = Math.round(BAND.en * state.style.englishScale);
+    const b = band(a);
+    const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, geo.lower.width, true);
+    const el = enSets.length ? measureLines(enSets[0], geo.englishFont, e, EN_LH, geo.lower.width, false, geo.englishWeight) : [];
+    const body = BAND.height - BAND.refH;
+    const arLinesPerPage = el.length ? 1 : Math.max(1, Math.floor((body - MARK_H + b) / (a * AR_LH + b)));
+    const arabicPages = chunk(al, arLinesPerPage);
+    const marked = arabicPages.length > 1;
+    // The recited word's meaning hangs under its line: the marker sits below the room kept for it.
+    const arabicMarkTop = marked ? MARK_TOP + b : null;
+    const arabicH = arH(Math.min(al.length, arLinesPerPage), a) + (marked ? b + MARK_H : 0);
+    // Under the marker the translation needs only the band's gap; else it keeps the meaning's room.
+    const englishTop = marked || !following ? BAND.gap : BAND.meaningGap;
+    const room = body - arabicH - englishTop;
+    const enLinesPerPage = el.length * e * EN_LH <= room ? Math.max(1, el.length) : Math.max(1, Math.floor((room - MARK_H) / (e * EN_LH)));
+    const englishPages = el.length ? chunk(el, enLinesPerPage) : [[]];
+    return {
+      layout: 'lowerthird',
+      promoted: false,
+      arabicPx: a,
+      englishPx: e,
+      arabicPages,
+      englishPages,
+      arabicPageWordStarts: wordStarts(arabicPages),
+      next: null,
+      nextRoom: null,
+      englishMinH: englishPages.length > 1 ? Math.ceil(enLinesPerPage * e * EN_LH) + MARK_H : null,
+      arabicMinH: marked ? Math.ceil(arH(arLinesPerPage, a) + b) + MARK_H : null,
+      arabicMarkTop,
+      englishTop: el.length ? englishTop : null,
+      band: b,
+      wordMeta: null,
+      enMeta: null,
+      passage: false,
+      banner: false,
+    };
   }
+  // Only Word focus leaves the lower third (its one large word needs the frame); the control page says so.
   const promoted = lowerWanted;
   // The preview only takes space the current ayah can spare at a comfortable size. A passage keeps
   // that room from its first ayah, though the server sends the preview only with its last.
@@ -413,6 +470,9 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
     nextRoom: null,
     // The translation turns with the recitation: a shorter last page keeps the full page's height.
     englishMinH: englishPages.length > 1 ? Math.ceil(enLinesPerPage * e * EN_LH) + MARK_H : null,
+    arabicMinH: null,
+    arabicMarkTop: null,
+    englishTop: null,
     band: b,
     wordMeta: null,
     enMeta: null,
@@ -488,6 +548,9 @@ function planEnglish(state: DisplayState, useGroup: boolean, geo: Geo): Plan {
     next,
     nextRoom: room ? nextRoomH(nextPx(e), EN_LH) : null,
     englishMinH: null,
+    arabicMinH: null,
+    arabicMarkTop: null,
+    englishTop: null,
     band: 0,
     wordMeta: null,
     enMeta,
@@ -497,6 +560,12 @@ function planEnglish(state: DisplayState, useGroup: boolean, geo: Geo): Plan {
   if (lower && geo.lower && !group) {
     const f = fit(geo.lower, geo.lower.height, Math.round(44 * state.style.englishScale), Math.round(30 * state.style.englishScale));
     if (f) return plan('lowerthird', f.e, [f.lines], null);
+    // Too long for the band: it pages inside it (the camera stays in view), each page the same height.
+    const e = Math.round(BAND.enOnly * state.style.englishScale);
+    const lines = measureLines(measureWords, geo.englishFont, e, EN_LH, geo.lower.width, false, geo.englishWeight);
+    const perPage = Math.max(1, Math.floor((BAND.height - BAND.refH - BAND.gap - MARK_H) / (e * EN_LH)));
+    const pages = chunk(lines, perPage);
+    return { ...plan('lowerthird', e, pages, null), englishMinH: pages.length > 1 ? Math.ceil(perPage * e * EN_LH) + MARK_H : null, englishTop: BAND.gap };
   }
   if (lower && group) return planEnglish(state, false, geo);
   // As in Arabic, a passage keeps the preview's room from its first ayah.
@@ -650,7 +719,7 @@ export function VerseDisplay({
                 <span className="sb-en">{v.surahName}</span>
               </header>
             )}
-            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? (frame ? 96 : 128) * state.style.arabicScale : plan.arabicPx, width: frame ? geo.full.width : undefined, '--meaning-band': plan.band ? `${plan.band}px` : undefined } as React.CSSProperties}>
+            {lang !== 'english' && <div className={`arabic ${mode === 'word' ? 'word-focus' : ''}`} lang="ar" dir="rtl" style={{ fontSize: mode === 'word' ? (frame ? 96 : 128) * state.style.arabicScale : plan.arabicPx, width: frame ? geo.full.width : undefined, minHeight: mode === 'word' ? undefined : (plan.arabicMinH ?? undefined), '--meaning-band': plan.band ? `${plan.band}px` : undefined } as React.CSSProperties}>
               {mode === 'word' ? (
                 <div className="focus-word" data-active={!!state.cursor} data-waiting={(!state.cursor && !heldText) || undefined}>
                   {focusText}
@@ -683,13 +752,13 @@ export function VerseDisplay({
                 </div>
               ))}
               {mode !== 'word' && plan.arabicPages.length > 1 && (
-                <div className="cont cont-ar" aria-label={`Arabic part ${arabicPage + 1} of ${plan.arabicPages.length}`}>
+                <div className="cont cont-ar" style={plan.arabicMarkTop !== null ? { marginTop: plan.arabicMarkTop } : undefined} aria-label={`Arabic part ${arabicPage + 1} of ${plan.arabicPages.length}`}>
                   {arabicPage < plan.arabicPages.length - 1 ? 'continues' : 'end of ayah'} · {arabicPage + 1}/{plan.arabicPages.length}
                 </div>
               )}
             </div>}
             {lang !== 'arabic' && plan.englishPages[englishPage].length > 0 && (
-              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx, minHeight: plan.englishMinH ?? undefined, width: frame ? geo.full.width : undefined }}>
+              <div className={`english${lang === 'english' ? ' english-only' : ''}`} lang="en" style={{ fontSize: plan.englishPx, minHeight: plan.englishMinH ?? undefined, marginTop: plan.englishTop ?? undefined, width: frame ? geo.full.width : undefined }}>
                 {mode === 'word' && <div className="translation-label">Ayah translation</div>}
                 {plan.englishPages[englishPage].map((line, i) => {
                   if (!plan.enMeta) return <div className="line" key={i}>{line.join(' ')}</div>;
