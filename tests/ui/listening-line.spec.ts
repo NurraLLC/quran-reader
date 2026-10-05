@@ -86,7 +86,8 @@ test('in line: the place is shown, the turn is taken by itself, and "your turn" 
   await expect.poll(() => streams.length).toBe(1);
   await expect.poll(() => asks, { timeout: 10_000 }).toBe(4); // still in line, it asks again shortly
   await expect(status).toHaveText(/You’re next/);
-  await expect(page.getByText(/error|went wrong/i)).toHaveCount(0);
+  // Only the reader's own messages (the dock): the passage's translation may itself say "error" (2:16).
+  await expect(page.locator('.r-dock').getByText(/error|went wrong/i)).toHaveCount(0);
 
   // The second stream is open, but the recogniser has not answered yet: still in line.
   await expect.poll(() => streams.length).toBe(2);
