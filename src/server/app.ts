@@ -620,12 +620,26 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     await app.register(fastifyStatic, { root: WEB_DIST, prefix: '/', index: false, wildcard: true });
     // Link previews need an absolute image address: the public origin, when there is one.
     const origin = hosted?.publicOrigin?.replace(/\/+$/, '');
-    const indexHtml = () => {
+    const indexHtml = (route: string) => {
       let html = readFileSync(path.join(WEB_DIST, 'index.html'), 'utf8');
+      // What this page is, for search and answer engines and link previews (the app itself renders
+      // in the browser): its title, description, canonical address and a short static summary.
+      const page = pageMeta(route);
+      html = html.replace(/<title>[^<]*<\/title>/, `<title>${escapeHtml(page.title)}</title>`);
+      if (page.description) html = html.replace(/<meta name="description" content="[^"]*"/, `<meta name="description" content="${escapeHtml(page.description)}"`);
+      if (page.description && route !== '/' && route !== '/reader') {
+        html = html
+          .replace(/<meta property="og:title" content="[^"]*"/, `<meta property="og:title" content="${escapeHtml(page.title)}"`)
+          .replace(/<meta property="og:description" content="[^"]*"/, `<meta property="og:description" content="${escapeHtml(page.description)}"`);
+      }
+      const extra = [page.robots ? `<meta name="robots" content="${page.robots}" />` : '', origin && page.canonical !== undefined ? `<link rel="canonical" href="${origin}${base}${page.canonical}" />` : ''].filter(Boolean);
+      if (extra.length) html = html.replace('</head>', `  ${extra.join('\n    ')}\n  </head>`);
+      // Root-relative links: anchored under the base path with every other address below.
+      html = html.replace(/<!-- qo:summary[^>]*-->/, page.summary ? `<noscript>${page.summary}</noscript>` : '');
       if (origin) {
         html = html
           .replace(/content="\.?\/og\.png"/, `content="${origin}${base}/og.png"`)
-          .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}${base}/" /><meta property="og:type"`);
+          .replace('<meta property="og:type"', `<meta property="og:url" content="${origin}${base}${page.canonical ?? '/'}" /><meta property="og:type"`);
       }
       // Every page, script, font and icon address under the base path; the page learns it too.
       return html
@@ -633,8 +647,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
         .replace(/url\((['"]?)\/fonts\//g, (_m, q: string) => `url(${q}${base}/fonts/`)
         .replace('<head>', `<head>\n    <meta name="qo-base" content="${base}" />`);
     };
-    for (const route of ['/control', '/overlay', '/read', '/stream', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml()));
-    app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml()) : reply.redirect(`${base}/control`)));
+    for (const route of ['/control', '/overlay', '/read', '/stream', '/reader', '/about']) app.get(route, (_req, reply) => reply.type('text/html').send(indexHtml(route)));
+    app.get('/', (_req, reply) => (hosted ? reply.type('text/html').send(indexHtml('/')) : reply.redirect(`${base}/control`)));
     // The installable app's manifest, with its start page and icons under the base path.
     app.get('/manifest.webmanifest', (_req, reply) =>
       reply.type('application/manifest+json').send(readFileSync(path.join(WEB_DIST, 'manifest.webmanifest'), 'utf8').replace(/": "\//g, `": "${base}/`)),
@@ -657,6 +671,44 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   }
 
   return { app, ownerToken };
+}
+
+const escapeHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * Each route as search and answer engines, link previews and readers without JavaScript see it.
+ * `canonical` is the path on the public site (start page and /reader are the same page); stream
+ * outputs (overlay, reading screen, charity scene) are not pages to find, so they stay out of search.
+ * Summary links are root-relative: they are anchored under the base path like every other address.
+ */
+export function pageMeta(route: string): { title: string; description?: string; canonical?: string; robots?: string; summary?: string } {
+  const links = (...l: Array<[string, string]>) => `<p>${l.map(([href, text]) => `<a href="${href}">${text}</a>`).join(' · ')}</p>`;
+  const needsApp = 'The reader needs JavaScript to run.';
+  switch (route) {
+    case '/':
+    case '/reader':
+      return {
+        title: 'Quran Reader: recite, and the page follows along',
+        canonical: '/',
+        summary: `<h1>Recite, and the page follows along.</h1><p>Quran Reader shows the ayah you are reciting, each word lit up with its meaning, in Arabic and English, on your phone or as an OBS overlay on your stream. Reading never needs the microphone. ${needsApp}</p>${links(['/about', 'Why we built this'], ['/control', 'Stream controls'], ['/privacy.html', 'Privacy'], ['/terms.html', 'Terms'])}`,
+      };
+    case '/control':
+      return {
+        title: 'Stream controls · Quran Reader',
+        description: 'Show the ayah you are reciting on your stream with OBS: an overlay that follows your recitation, with the English translation and the meaning of each word.',
+        canonical: '/control',
+        summary: `<h1>Stream controls</h1><p>Copy the overlay link into an OBS Browser source, then recite or type a reference: the overlay shows the ayah, its translation and the meaning of each word. ${needsApp}</p>${links(['/', 'Quran Reader'], ['/about', 'Why we built this'], ['/privacy.html', 'Privacy'])}`,
+      };
+    case '/about':
+      return {
+        title: 'Why we built this · Quran Reader',
+        description: 'What Quran Reader does, where its Quran text, translation and font come from, what listening costs, and how community support keeps it free.',
+        canonical: '/about',
+        summary: `<h1>Why we built this</h1><p>Quran Reader listens as you recite and keeps your place, with the meaning of each word, on your phone or on your stream. It is free, made by Nurra, and never generates scripture or translations.</p><p>Arabic text, word meanings and transliteration: Quran.com (Quran Foundation). English translation: Saheeh International. Arabic font: KFGQPC HAFS Uthmanic Script, King Fahd Glorious Quran Printing Complex.</p>${links(['/', 'Open the reader'], ['/privacy.html', 'Privacy'], ['/terms.html', 'Terms'])}`,
+      };
+    default:
+      return { title: 'Quran Reader · stream output', robots: 'noindex' };
+  }
 }
 
 /** "/quran-reader" from "quran-reader/", "/quran-reader" or "" (no base). */
