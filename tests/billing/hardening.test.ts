@@ -9,7 +9,7 @@ import { SessionHub } from '../../src/server/billing/hub';
 import { VisitorIdentity } from '../../src/server/billing/identity';
 import { OverlayLinks } from '../../src/server/billing/overlay-links';
 import { CommandResolver } from '../../src/server/commands/reducer';
-import { Session } from '../../src/server/sessions';
+import { DISCONNECT_GRACE_MS, Session } from '../../src/server/sessions';
 import type { ControlServerMessage, DisplayStyle } from '../../src/shared/contracts';
 import { fullCorpus, VirtualClock } from '../helpers';
 
@@ -92,6 +92,86 @@ describe('the display while reciting', () => {
     s.controlDisconnected();
     expect(s.display.verse?.key).toBe('36:9');
     expect(s.display.cursor ?? null).toBeNull();
+  });
+
+  it('hides the ayah, never clears it, once listening has been lost for the grace, and shows it again when listening returns', async () => {
+    const clock = new VirtualClock();
+    const s = new Session(options({ clock }));
+    const shown: Array<string | null> = [];
+    s.onDisplay((d) => shown.push(d.visible ? d.verse!.key : null));
+    s.controlConnected();
+    s.handle({ type: 'capture', captureEpoch: 1, event: 'recording' });
+    s.handle({ type: 'goto', key: '67:2' });
+    s.controlDisconnected();
+    await clock.advance(DISCONNECT_GRACE_MS - 1000);
+    expect(s.display).toMatchObject({ visible: true, verse: { key: '67:2' } });
+    await clock.advance(1000);
+    expect(DISCONNECT_GRACE_MS).toBeGreaterThanOrEqual(15_000); // a page reload never touches the stream
+    expect(s.display.verse?.key).toBe('67:2');
+    expect(s.display.visible).toBe(false);
+    expect(s.snapshot()).toMatchObject({ blanked: true, trackerVerse: '67:2' });
+    expect(s.snapshot().notice).toMatch(/^Hidden from stream: listening stopped unexpectedly\..*67:2/);
+    // The page is back (reopened): the stream stays hidden until listening starts again, then the ayah returns by itself.
+    s.controlConnected();
+    s.handle({ type: 'capture', captureEpoch: 2, event: 'starting' });
+    expect(s.display.visible).toBe(false);
+    s.handle({ type: 'capture', captureEpoch: 2, event: 'recording' });
+    expect(s.display).toMatchObject({ visible: true, verse: { key: '67:2' } });
+    expect(s.snapshot().notice).toBeNull();
+    expect(shown).toEqual(['67:2', null, '67:2']);
+    // The same after the stream itself fails while the page stays open.
+    s.handle({ type: 'capture', captureEpoch: 2, event: 'error', detail: 'Microphone lost' });
+    await clock.advance(DISCONNECT_GRACE_MS);
+    expect(s.display).toMatchObject({ visible: false, verse: { key: '67:2' } });
+    s.handle({ type: 'capture', captureEpoch: 3, event: 'recording' });
+    expect(s.display.visible).toBe(true);
+  });
+
+  it('never shows again an ayah the broadcaster hid', async () => {
+    const clock = new VirtualClock();
+    const s = new Session(options({ clock }));
+    s.controlConnected();
+    s.handle({ type: 'capture', captureEpoch: 1, event: 'recording' });
+    s.handle({ type: 'goto', key: '67:2' });
+    s.handle({ type: 'blank', on: true });
+    s.controlDisconnected();
+    await clock.advance(DISCONNECT_GRACE_MS + 1000);
+    s.controlConnected();
+    s.handle({ type: 'capture', captureEpoch: 2, event: 'recording' });
+    expect(s.display).toMatchObject({ visible: false, verse: { key: '67:2' } });
+    // Hidden by the outage, then hidden again by the broadcaster: the hide is now theirs.
+    s.handle({ type: 'blank', on: false });
+    s.controlDisconnected();
+    await clock.advance(DISCONNECT_GRACE_MS);
+    expect(s.display.visible).toBe(false);
+    s.controlConnected();
+    s.handle({ type: 'blank', on: true });
+    s.handle({ type: 'capture', captureEpoch: 3, event: 'recording' });
+    expect(s.display.visible).toBe(false);
+    // Unhide is always the broadcaster's to press, and clears the explanation with the hide.
+    s.handle({ type: 'blank', on: false });
+    expect(s.display.visible).toBe(true);
+    expect(s.snapshot().notice).toBeNull();
+  });
+
+  it('keeps the ayah up when the page is back within the grace, or when asked to', async () => {
+    const clock = new VirtualClock();
+    const s = new Session(options({ clock }));
+    s.controlConnected();
+    s.handle({ type: 'capture', captureEpoch: 1, event: 'recording' });
+    s.handle({ type: 'goto', key: '67:2' });
+    s.controlDisconnected();
+    await clock.advance(DISCONNECT_GRACE_MS - 5000);
+    s.controlConnected(); // reloaded: the broadcaster is back and decides
+    await clock.advance(DISCONNECT_GRACE_MS);
+    expect(s.display).toMatchObject({ visible: true, verse: { key: '67:2' } });
+    expect(s.snapshot().notice).toBeNull();
+    // "Keep the ayah up if the microphone disconnects"
+    s.handle({ type: 'pin', on: true });
+    s.handle({ type: 'capture', captureEpoch: 2, event: 'recording' });
+    s.controlDisconnected();
+    await clock.advance(DISCONNECT_GRACE_MS * 4);
+    expect(s.display).toMatchObject({ visible: true, verse: { key: '67:2' } });
   });
 });
 

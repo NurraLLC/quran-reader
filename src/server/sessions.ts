@@ -5,6 +5,8 @@
 //   Stop listening  → capture ends, the verse on screen stays (not "following").
 //   Pause following → capture continues privately, the audience display is frozen.
 //   Blank           → audience sees nothing; tracking continues underneath.
+//   Listening lost  → (the control page gone, or its stream failed) after a grace the ayah is hidden,
+//                     never cleared, and it returns by itself when listening does.
 //   Manual navigation always publishes (it is explicit), and re-anchors the tracker.
 
 import { shortGroup } from './corpus/groups';
@@ -48,7 +50,8 @@ import { mapDisplayWords, type WordSpan } from './corpus/word-map';
 import { ListeningCommands } from './commands/listening';
 import { ArabicSurahRequests } from './commands/arabic-request';
 
-export const DISCONNECT_GRACE_MS = 5000;
+/** Listening lost this long hides the ayah from stream: longer than a control page takes to reload. */
+export const DISCONNECT_GRACE_MS = 15_000;
 /** A highlight catching up passes each word between for this long (the highlight's own fade). */
 const SWEEP_MS = 90;
 /** Words heard in one stream beyond which its results are ignored (three hours is ~25,000). */
@@ -126,6 +129,10 @@ export class Session {
   private commandActive = false;
   private heldBySearch = false;
   private blanked = false;
+  /** The hide came from listening being lost, not from the broadcaster: listening coming back undoes it. */
+  private hiddenByOutage = false;
+  /** The explanation shown with that hide (cleared with it). */
+  private outageNotice: string | null = null;
   private pinned = false;
   private startHint: number | null = null;
   private style: DisplayStyle = { ...DEFAULT_STYLE };
@@ -477,6 +484,8 @@ export class Session {
       case 'hold':
         return msg.on ? this.hold() : this.resume();
       case 'blank':
+        // Hide and Unhide are the broadcaster's: a hide they choose is never undone for them.
+        this.endOutageHide();
         this.blanked = msg.on;
         this.logEvent(msg.on ? 'blank' : 'unblank', this.verseLabel(this.displayVerse));
         return this.publish();
@@ -862,6 +871,13 @@ export class Session {
       msg.event === 'starting' ? 'starting' : msg.event === 'recording' || msg.event === 'unmuted' || msg.event === 'muted' ? 'recording' : msg.event === 'reconnecting' ? 'reconnecting' : msg.event === 'dozing' ? 'dozing' : msg.event === 'waiting' ? 'waiting' : msg.event === 'stopped' ? 'stopped' : 'error';
     this.capture = { ...this.capture, phase, detail: msg.detail ?? (msg.event === 'muted' ? 'Microphone muted at the system or device level.' : null), since: now };
     this.logEvent(`capture:${msg.event}`, null, msg.detail);
+    // Listening is back: an ayah hidden because it was lost returns (one the broadcaster hid does not).
+    if (phase === 'recording' && this.hiddenByOutage) {
+      this.endOutageHide();
+      this.blanked = false;
+      this.logEvent('outage_unhide', this.verseLabel(this.displayVerse));
+      this.publish();
+    }
     // Dozing (a long pause closed the provider stream) and waiting in line end the stream like
     // Stop, but listening is still on and the next stream continues from the same place.
     if (msg.event === 'stopped' || msg.event === 'dozing' || msg.event === 'waiting') {
@@ -961,6 +977,8 @@ export class Session {
 
   controlConnected() {
     this.controlClients++;
+    // A page back within the grace (a reload) leaves the stream alone: the broadcaster is here to decide.
+    if (this.capture.phase === 'disconnected') this.cancelDisconnect();
     this.queueSnapshot();
   }
 
@@ -975,18 +993,31 @@ export class Session {
     }
   }
 
+  /**
+   * Listening was lost (the control page went away, or its stream failed). After the grace the ayah
+   * is hidden from stream rather than left frozen with nobody following, and never cleared: it is
+   * kept, with the place, for when listening returns (then it shows again by itself) or Unhide.
+   */
   private startDisconnectGrace() {
     this.cancelDisconnect();
     this.disconnectTimer = this.clock.setTimeout(() => {
       this.disconnectTimer = null;
-      if (this.pinned || this.displayVerse === null) return;
-      this.showVerse(null);
-      this.trackerVerse = null;
-      this.follower.unlocate();
-      this.notice = 'The screen was cleared: listening stopped unexpectedly for 5 seconds. To keep the ayah up during outages, turn on “Keep the ayah up if the microphone disconnects”.';
-      this.logEvent('disconnect_clear', null);
+      // Kept up on request ("Keep the ayah up if the microphone disconnects"), nothing to hide, or the broadcaster already hid it.
+      if (this.pinned || this.displayVerse === null || this.blanked) return;
+      const key = this.verseLabel(this.displayVerse);
+      this.blanked = true;
+      this.hiddenByOutage = true;
+      this.notice = this.outageNotice = `Hidden from stream: listening stopped unexpectedly. Start listening or Unhide to show ${key} again.`;
+      this.logEvent('disconnect_hide', key);
       this.publish();
     }, DISCONNECT_GRACE_MS);
+  }
+
+  /** The hide that listening being lost caused is over (listening returned, or the broadcaster chose). */
+  private endOutageHide() {
+    this.hiddenByOutage = false;
+    if (this.outageNotice !== null && this.notice === this.outageNotice) this.notice = null;
+    this.outageNotice = null;
   }
 
   private cancelDisconnect() {
