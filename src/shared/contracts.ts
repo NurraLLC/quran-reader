@@ -22,7 +22,7 @@ export const DisplayStyleSchema = z.object({
   arabicScale: z.number().min(0.8).max(1.25),
   /** Translation size, measured before pagination rather than stretching the finished text. */
   englishScale: z.number().min(0.8).max(1.4).default(1),
-  /** Placement applies to the lower third; long ayahs still promote to the full frame. */
+  /** Placement applies to the lower third; long ayahs page inside it (only Word focus uses the full frame). */
   captionPosition: z.enum(['top', 'bottom']).default('bottom'),
   captionInset: z.number().int().min(24).max(160).default(56),
   /** Shading behind text only; the text itself stays opaque. */

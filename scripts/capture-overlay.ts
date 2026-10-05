@@ -13,7 +13,7 @@ const ALL: Scenario[] = [
   { name: 'longest-2-282', key: '2:282' },
   { name: 'longest-2-282-translation-p2', key: '2:282', englishPage: 1 },
   { name: 'lower-1-2', key: '1:2', layout: 'lowerthird' },
-  { name: 'lower-2-255-promoted', key: '2:255', layout: 'lowerthird' },
+  { name: 'lower-2-255-paged', key: '2:255', layout: 'lowerthird' },
   { name: 'transparent-36-1', key: '36:1', bg: 'transparent', layout: 'fullframe' },
   { name: 'solid-19-3', key: '19:3', bg: 'solid' },
 ];

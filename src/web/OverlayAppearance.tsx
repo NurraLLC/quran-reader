@@ -73,7 +73,7 @@ export function OverlayAppearance({ style: s, sessionEpoch, send }: { style: Dis
       {s.layout === 'lowerthird' && <>
         {seg('Caption position', s.captionPosition, [['bottom', 'Bottom'], ['top', 'Top']], (captionPosition) => change({ captionPosition }))}
         {slider('Distance from edge', 'captionInset', 24, 160, 8)}
-        <p className="hint">Long ayahs use the full frame so no words are cut off.</p>
+        <p className="hint">Long ayahs turn pages inside the captions as you recite; no words are cut off.</p>
       </>}
       {seg('Background', s.background, [['transparent', 'Transparent'], ['scrim', 'Shaded panel'], ['solid', 'Solid']], (background) => change({ background }))}
       {s.background === 'scrim' && slider('Panel shading', 'panelOpacity', 0.2, 1, 0.04)}

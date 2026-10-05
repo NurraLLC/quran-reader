@@ -61,6 +61,8 @@ export type LayoutInfo = {
   promotedToFullFrame: boolean;
   arabicPx: number;
   englishPx: number;
+  /** Words on each translation page (page-local: the control page names the page its preview shows). */
+  englishPageWords: number[];
 };
 
 type Lines = string[][];
@@ -120,10 +122,14 @@ function chunk<T>(xs: T[], n: number): T[][] {
  * translation is not aligned with the Arabic word for word, so this follows the recitation's progress.
  */
 function pageAt(pages: Lines[], at: number): number {
-  const words = pages.map((p) => p.reduce((n, l) => n + l.length, 0));
+  return translationPageAt(pages.map((p) => p.reduce((n, l) => n + l.length, 0)), at);
+}
+
+/** pageAt by the words on each page (also used by the control page for the page its preview shows). */
+export function translationPageAt(words: number[], at: number): number {
   const total = words.reduce((a, b) => a + b, 0) || 1;
   let page = 0;
-  for (let i = 1, before = words[0]; i < pages.length; before += words[i], i++) if (before / total <= at) page = i;
+  for (let i = 1, before = words[0]; i < words.length; before += words[i], i++) if (before / total <= at) page = i;
   return page;
 }
 
@@ -651,6 +657,7 @@ export function VerseDisplay({
       promotedToFullFrame: plan.promoted,
       arabicPx: plan.arabicPx,
       englishPx: plan.englishPx,
+      englishPageWords: plan.englishPages.map((p) => p.reduce((n, l) => n + l.length, 0)),
     };
     const k = JSON.stringify(info);
     if (k !== lastReported.current) {

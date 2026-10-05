@@ -127,7 +127,7 @@ Without keys, everything except listening works: manual and keyboard navigation,
 - **Going back and moving on:** restarting a few words back after a breath (or at the start of the ayah) is followed, not treated as a new place. When recitation stops matching (a jump elsewhere, a pause to talk), the last ayah stays up until the new place is found; *When recitation stops matching → clear the screen after 3 s* is the alternative.
 - **Three different actions:** *Stop listening* keeps the current ayah on screen. *Pause following* freezes the screen while still listening. *Hide from stream* blanks the audience view without losing your place.
 - **Keyboard:** ← / → previous/next ayah, H pause/resume, B hide/unhide.
-- **Long ayahs** that cannot fit legibly are paged, never shrunk or clipped: the Arabic part follows the recitation position; translation pages turn on a timer or with ›. A lower third that cannot hold an ayah is shown full frame for that ayah, and the control page says so.
+- **Long ayahs** that cannot fit legibly are paged, never shrunk or clipped: the Arabic part follows the recitation position; translation pages follow the recitation (each screen by its own page count), or turn on a timer or with ›. In the lower third, an ayah too long for the caption band pages inside the band, so the camera stays in view; only Word focus uses the full frame.
 
 ## OBS
 

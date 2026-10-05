@@ -7,7 +7,7 @@ import { OWN_KEY_SHAPE, ownSonioxKey, setOwnSonioxKey, SonioxCapture, type Captu
 import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
-import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
+import { StageFrame, VerseDisplay, translationPageAt, useFontsReady, type LayoutInfo } from './VerseDisplay';
 import { money } from './stream-format';
 import { OverlayAppearance } from './OverlayAppearance';
 import { REQUEST_PRIVACY } from './privacy-copy';
@@ -323,14 +323,14 @@ export function Control() {
   const d = snap.display;
   const lay = measured && measured.key === d.verse?.key ? measured : null;
   // The translation page the preview shows: while the broadcaster has not paged (page 1, no timer),
-  // every output turns its own pages with the recitation; this is the preview's.
+  // every output turns its own pages with the recitation (the renderer's own rule); this is the preview's.
   const translationFollows = d.englishPage === 0 && !d.style.translationPageSeconds;
   const translationPage = (() => {
     const n = lay?.englishPages ?? 1;
-    if (!translationFollows) return d.englishPage % n;
+    if (!translationFollows || !lay) return d.englishPage % n;
     const words = d.verse ? toQpcHafsEncoding(d.verse.arabic).split(/\s+/).filter(Boolean).length : 0;
     const at = d.cursor && words ? (d.cursor.from + 1) / words : d.progress;
-    return at === null ? 0 : Math.min(n - 1, Math.floor(at * n));
+    return at === null ? 0 : translationPageAt(lay.englishPageWords, at);
   })();
   // First use: the three steps, confirmed in place when OBS opens the link (then Done). A returning
   // broadcaster sees one folded line until OBS connects, and nothing once it has.
@@ -355,7 +355,8 @@ export function Control() {
           <div className="monitor-head">
             <span className={`onair ${d.visible ? 'live' : ''}`}>{d.visible ? 'On screen' : snap.blanked ? 'Hidden from stream' : 'Nothing on screen'}</span>
             {snap.blanked && d.verse && <span className="muted">{d.verse.key} returns when you unhide</span>}
-            {lay?.promotedToFullFrame && (d.style.readingMode === 'word' ? <span className="muted">Word focus is always shown full frame</span> : <span className="warn">Too long for the lower third — shown full frame</span>)}
+            {/* Long ayahs page inside the caption band (the camera stays in view); only Word focus takes the frame. */}
+            {lay?.promotedToFullFrame && d.style.readingMode === 'word' && <span className="muted">Word focus is always shown full frame</span>}
             <SpeedMeter view={speedView} listening={cap.listening} />
           </div>
           <div className="view-controls">
@@ -422,7 +423,7 @@ export function Control() {
                   Translation page {translationPage + 1}/{lay.englishPages}{translationFollows ? ' · follows your recitation' : ''}
                   <button title="Previous translation page" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + lay.englishPages - 1) % lay.englishPages })}>‹</button>
                   <button title="Next translation page (after the last, back to following)" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + 1) % lay.englishPages })}>›</button>
-                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : translationFollows ? '› reads ahead' : 'back to page 1 to follow again'}</span>
+                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : translationFollows ? '› pages by hand' : 'back to page 1 to follow again'}</span>
                 </span>
               )}
             </div>
@@ -932,7 +933,7 @@ function OutputCard({ snap, send, hosted, copied, copyFailed, onCopy, onReplace,
       <label className="row">
         Long translations turn pages
         <select value={snap.display.style.translationPageSeconds} onChange={(e) => send({ type: 'style', patch: { translationPageSeconds: Number(e.target.value) } })}>
-          <option value={0}>with the recitation (› reads ahead)</option>
+          <option value={0}>with the recitation (› pages by hand)</option>
           <option value={10}>every 10 s</option>
           <option value={14}>every 14 s</option>
           <option value={20}>every 20 s</option>
