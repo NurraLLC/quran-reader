@@ -381,6 +381,7 @@ html[data-surface='reader'] :is(.r-ayah, .r-word, .r-en, .r-page button, .r-page
 /* Words with a meaning are reachable from the keyboard (arrow keys inside the passage). */
 .r-word[role='button']:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .r-mark { font-family: 'Uthmanic Hafs', serif; color: var(--gold); margin-right: 4px; }
+.r-ayah-end { white-space: nowrap; }
 .r-en { margin: 6px 0 0; font-family: var(--serif); font-size: calc(clamp(16px, 4.3vw, 19px) * var(--reader-scale, 1)); line-height: 1.55; color: var(--paper); }
 .reader[data-lang='english'] .r-en { font-size: calc(clamp(19px, 5.2vw, 23px) * var(--reader-scale, 1)); color: var(--ivory); margin: 0; }
 .r-num { display: inline-block; min-width: 1.6em; margin-right: 8px; color: var(--gold); font: 650 0.75em/1 var(--ui); font-variant-numeric: tabular-nums; }

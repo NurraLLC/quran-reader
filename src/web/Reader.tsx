@@ -783,7 +783,9 @@ export function Reader() {
                             : null;
                         const hasMeaning = !!a.glosses?.[i];
                         return (
-                          <span key={i}>
+                          // The last word and the ayah number stay on one line (the number is a button,
+                          // and a no-break space alone does not hold an inline-block to the word).
+                          <span key={i} className={i === words.length - 1 ? 'r-ayah-end' : undefined}>
                             <span
                               className={`r-word${active ? ' active' : ''}${passed ? ' passed' : ''}${peeked ? ' peeked' : ''}`}
                               // Tapping a word shows its meaning; tapping elsewhere in the ayah follows from it.
