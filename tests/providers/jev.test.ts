@@ -1,6 +1,6 @@
 // Transport-fixture tests for the JEV Decisions client. No network; no paid provider call.
 import { describe, expect, it } from 'vitest';
-import { buildLocate, readLocate, WAIT } from '../../src/server/providers/decisions';
+import { buildCommandChoice, buildLocate, readLocate, WAIT } from '../../src/server/providers/decisions';
 import {
   byteLength,
   encodeRequest,
@@ -68,6 +68,44 @@ describe('JEV request encoding', () => {
 });
 
 describe('JEV response validation (ported from Moard openrouter_jev tests)', () => {
+  it.each(['TypeSafe', 'typesafe', 'TYPESAFE', undefined])('preserves optional pinned provider %s', async (provider) => {
+    const { state, questions } = buildCommandChoice('No, I meant Ash-Shams, not Ash-Shuara.', '2:255', [
+      { id: 'a0', label: 'Go to Ash-Shams', description: 'Show 91:1' },
+      { id: 'a1', label: 'Go to Ash-Shuara', description: 'Show 26:1' },
+    ]);
+    const answers = { action: { type: 'choice', choice: 'a0', probabilities: { a0: 0.95, a1: 0.03, NO_ACTION: 0.02 }, confidence: 0.9 } };
+    const d = await new JevClient('openrouter', 'test-key', fakeFetch(200, good({ provider, answers })))
+      .evaluate(state, questions, { timeoutMs: 600 });
+    expect(d.answers.action).toMatchObject({ choice: 'a0', tied: false });
+  });
+
+  it.each(['Other', 'TypeSafe-fallback'])('rejects a response served by %s through the real command packet', async (provider) => {
+    const { state, questions } = buildCommandChoice('No, I meant Ash-Shams, not Ash-Shuara.', '2:255', [
+      { id: 'a0', label: 'Go to Ash-Shams', description: 'Show 91:1' },
+      { id: 'a1', label: 'Go to Ash-Shuara', description: 'Show 26:1' },
+    ]);
+    const answers = { action: { type: 'choice', choice: 'a0', probabilities: { a0: 0.95, a1: 0.03, NO_ACTION: 0.02 }, confidence: 0.9 } };
+    const calls: Array<{ url: string; body: string; headers: Record<string, string> }> = [];
+    await expect(new JevClient('openrouter', 'test-key', fakeFetch(200, good({ provider, answers }), {}, calls))
+      .evaluate(state, questions, { timeoutMs: 600 })).rejects.toMatchObject({ code: 'RESPONSE_INVALID' });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each([
+    ['missing confidence', { type: 'choice', choice: 'a0', probabilities: { a0: 0.95, a1: 0.03, NO_ACTION: 0.02 } }],
+    ['missing probabilities', { type: 'choice', choice: 'a0', confidence: 0.9 }],
+    ['wrong probability keys', { type: 'choice', choice: 'a0', probabilities: { a0: 0.95, other: 0.03, NO_ACTION: 0.02 }, confidence: 0.9 }],
+    ['nonfinite probability', { type: 'choice', choice: 'a0', probabilities: { a0: Infinity, a1: 0.03, NO_ACTION: 0.02 }, confidence: 0.9 }],
+    ['wrong winner', { type: 'choice', choice: 'a1', probabilities: { a0: 0.95, a1: 0.03, NO_ACTION: 0.02 }, confidence: 0.9 }],
+  ])('refuses %s for the actual command options', async (_name, action) => {
+    const { state, questions } = buildCommandChoice('No, I meant Ash-Shams, not Ash-Shuara.', '2:255', [
+      { id: 'a0', label: 'Go to Ash-Shams', description: 'Show 91:1' },
+      { id: 'a1', label: 'Go to Ash-Shuara', description: 'Show 26:1' },
+    ]);
+    await expect(new JevClient('openrouter', 'test-key', fakeFetch(200, good({ answers: { action } })))
+      .evaluate(state, questions, { timeoutMs: 600 })).rejects.toMatchObject({ code: 'RESPONSE_INVALID' });
+  });
+
   it('a metering field the provider has not shipped yet does not end the decision', () => {
     const d = parseDecision('openrouter', good({ usage: { input_tokens: 476, output_tokens: 70, cached_input_tokens: 41 } }), Q);
     expect(d.usage.inputTokens).toBe(476);

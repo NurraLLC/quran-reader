@@ -216,6 +216,9 @@ export function parseDecision(
   for (const k of ['id', 'provider'] as const) {
     if (k in payload && (typeof payload[k] !== 'string' || !/^[\x20-\x7e]{1,256}$/.test(payload[k] as string))) throw bad();
   }
+  // An omitted optional provider keeps wrapper compatibility; a conflicting returned
+  // provider contradicts the TypeSafe-only request and cannot supply a decision.
+  if (gateway === 'openrouter' && typeof payload.provider === 'string' && payload.provider.toLowerCase() !== 'typesafe') throw bad();
   const answers = payload.answers;
   const usage = payload.usage;
   if (!isObj(answers) || !isObj(usage) || !sameKeys(answers, Object.keys(questions))) throw bad();
