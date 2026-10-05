@@ -48,7 +48,7 @@ import { realClock, type Clock } from './tracker/scheduler';
 import { LiveCursor } from './tracker/live-cursor';
 import { Lag, Pace, type Quiet, type Timed } from './tracker/pace';
 import { mapDisplayWords, type WordSpan } from './corpus/word-map';
-import { ListeningCommands } from './commands/listening';
+import { ListeningCommands, type SpokenIntent } from './commands/listening';
 import { ArabicSurahRequests } from './commands/arabic-request';
 
 /** Listening lost this long hides the ayah from stream: longer than a control page takes to reload. */
@@ -70,9 +70,6 @@ export type SessionSetup = {
   jev: { provider: 'typesafe' | 'openrouter' | null; configured: boolean; detail: string };
   semantic: () => string;
 };
-
-/** Speech that asks to find something (as opposed to talking about it). */
-const EXPLICIT_FIND = /^(please\s+)?((find|show|open|bring up|pull up|go to|take me to)\b|(the\s+|a\s+|which\s+)?(surah|sura|chapter|ayah|aya|verse)\s+(about|on|regarding|where|that|which|with|of|concerning)\b)/i;
 
 export type SessionOptions = {
   corpus: Corpus;
@@ -223,7 +220,7 @@ export class Session {
     this.arabicRequests = ArabicSurahRequests.for(o.corpus.data.chapters);
     this.listeningCommands = new ListeningCommands(o.decisionClient, this.clock, (text, id, intent) => {
       if (this.capture.phase !== 'recording' || this.commandActive) return;
-      void this.command(id, text, intent === 'show');
+      void this.command(id, text, intent);
     }, message => this.say(message));
     const saved = o.style ? DisplayStyleSchema.safeParse({ ...DEFAULT_STYLE, ...(o.style as object) }) : null;
     if (saved?.success) this.style = saved.data;
@@ -620,7 +617,7 @@ export class Session {
         this.follower.engine.cfg = { ...this.follower.engine.cfg, keepOnUncertain: msg.keep };
         return this.queueSnapshot();
       case 'command':
-        void this.command(msg.requestId, msg.text, !!msg.show);
+        void this.command(msg.requestId, msg.text, msg.show ? 'show' : 'command');
         return;
       case 'show_result': {
         const c = this.latestCommand;
@@ -751,7 +748,7 @@ export class Session {
       const req = this.arabicRequests.find(live.map((w) => w.text), from, !!live.at(-1)?.open);
       if (req) {
         this.arabicScan = req.end;
-        void this.command(`listen:ar-${msg.seq}`, `surah ${req.chapter}`, true);
+        void this.command(`listen:ar-${msg.seq}`, `surah ${req.chapter}`, 'show');
       }
     }
     const heard = this.buffer.heardText(1);
@@ -1128,8 +1125,8 @@ export class Session {
 
   // ---------- commands ----------
 
-  /** `show`: a spoken "show the ayah about ..." puts JEV's confirmed best match on screen. */
-  private async command(requestId: string, text: string, show = false) {
+  /** Classified search stays private; only an authorized show intent publishes search candidates. */
+  private async command(requestId: string, text: string, intent: SpokenIntent | 'command' = 'command') {
     this.latestCommand?.ctrl.abort();
     const ctrl = new AbortController();
     const cmd = { id: requestId, ctrl, keys: new Set<string>() };
@@ -1146,6 +1143,17 @@ export class Session {
       result = { kind: 'no_match', message: 'Search failed unexpectedly; exact references still work.' };
     }
     if (this.latestCommand !== cmd || ctrl.signal.aborted) return; // an old search cannot publish after a newer request
+    // Local parsing identifies a passage/action; it cannot grant a private utterance display authority.
+    if (intent === 'search') {
+      if (result.kind === 'navigate') {
+        const verse = this.o.corpus.verse(result.key)!;
+        result = { kind: 'candidates', route: 'search', query: text,
+          cards: [this.o.resolver.card(verse.index, ['reference'])], confirmedKey: verse.key,
+          status: `Found ${verse.key}.`, refining: false };
+      } else if (result.kind === 'control') {
+        result = { kind: 'no_match', message: 'No display change was confirmed. Try the request again or use the display controls.' };
+      }
+    }
     if (result.kind === 'control') {
       if (result.style) this.handle({ type: 'style', patch: result.style });
       if (result.hold !== null) this.handle({ type: 'hold', on: result.hold });
@@ -1161,10 +1169,7 @@ export class Session {
     }
     // Cards and their adjacent-ayah context (browsable in the card) may be shown.
     if (result.kind === 'candidates') for (const c of result.cards) for (const k of [c.key, c.prevKey, c.nextKey]) if (k) cmd.keys.add(k);
-    // Spoken finding requests ("surah about elephants", "find the ayah about patience") show their
-    // confirmed best match; plain descriptions of a verse stay private previews.
-    if (!show && requestId.startsWith('listen:') && EXPLICIT_FIND.test(text.trim())) show = true;
-    if (show && result.kind === 'candidates') {
+    if (intent === 'show' && result.kind === 'candidates') {
       if (result.confirmedKey) {
         const key = result.confirmedKey;
         this.settleNav(() => {
