@@ -316,9 +316,18 @@ button.stop { background: #4a2620; border-color: #8a4a3e; color: #ffe0d8; }
 /* ---------------- personal reader (phone first) ---------------- */
 
 html[data-surface='reader'] body { background: var(--ink-0); color: var(--text); font: 16px/1.5 var(--ui); -webkit-tap-highlight-color: transparent; }
+/* Nothing on the reader may widen the page (a phone would zoom out and push the dock off-screen). */
+html[data-surface='reader'], html[data-surface='reader'] body { overflow-x: clip; }
 /* The visible band between the sticky header and the dock (both measured by Reader.tsx, room under
-   the recited word for its meaning): scrolling to the word centres it there, never behind either. */
-html[data-surface='reader'] { scroll-padding: calc(var(--r-top-h, 0px) + 8px) 0 calc(var(--r-dock-h, 0px) + 28px); }
+   the recited word for its meaning): scrolling to a reading target centres it there, never behind
+   either. Set on the targets, not the page: on the page it made every focus of a header control
+   (and every return of focus to one) scroll the passage away. */
+html[data-surface='reader'] :is(.r-ayah, .r-word, .r-en, .r-page button, .r-page a, .r-page input, .r-page summary) {
+  scroll-margin: calc(var(--r-top-h, 0px) + 8px) 0 calc(var(--r-dock-h, 0px) + 28px);
+}
+/* A language or text-size change remounts these: the reader keeps its place itself (Reader.tsx), so
+   the browser's own scroll anchoring must not pick one of them and jump. */
+:is(.r-ar, .r-en, .r-word) { overflow-anchor: none; }
 .r-gate { max-width: 520px; margin: 20vh auto; padding: 0 20px; }
 .reader { min-height: 100dvh; }
 
@@ -354,8 +363,13 @@ html[data-surface='reader'] { scroll-padding: calc(var(--r-top-h, 0px) + 8px) 0 
 .r-word { position: relative; border-radius: 6px; transition: color 90ms ease-out, background 90ms ease-out; }
 .r-word.passed { color: #b9c9c3; }
 .r-word.active { color: #ffe0a0; background: rgba(207, 170, 98, 0.16); box-shadow: 0 2px 0 var(--gold); }
-.r-gloss { position: absolute; left: 50%; top: calc(100% - 0.12em); transform: translateX(-50%); white-space: nowrap; pointer-events: none;
+/* Centred under its word, moved inward at a line's ends and wrapped when wider than the column
+   (--gloss-shift and --gloss-max are measured by keepMeaningsInside, src/web/gloss.ts). */
+.r-gloss { position: absolute; left: 50%; top: calc(100% - 0.12em); transform: translateX(calc(-50% + var(--gloss-shift, 0px)));
+  width: max-content; max-width: var(--gloss-max, calc(100vw - 32px)); white-space: normal; text-align: center; pointer-events: none;
   font: 650 12.5px/1.2 var(--ui); color: #f3d898; background: rgba(10, 20, 24, 0.94); border: 1px solid rgba(207, 170, 98, 0.35); border-radius: 6px; padding: 2px 6px; z-index: 1; }
+/* Words with a meaning are reachable from the keyboard (arrow keys inside the passage). */
+.r-word[role='button']:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .r-mark { font-family: 'Uthmanic Hafs', serif; color: var(--gold); margin-right: 4px; }
 .r-en { margin: 6px 0 0; font-family: var(--serif); font-size: calc(clamp(16px, 4.3vw, 19px) * var(--reader-scale, 1)); line-height: 1.55; color: var(--paper); }
 .reader[data-lang='english'] .r-en { font-size: calc(clamp(19px, 5.2vw, 23px) * var(--reader-scale, 1)); color: var(--ivory); margin: 0; }
@@ -391,7 +405,7 @@ html[data-reader-theme='paper'] .r-give-legend .lit,
 html[data-reader-theme='paper'] .r-pool .r-give-amounts button strong { color: #73501b; }
 html[data-reader-theme='paper'] .r-give-dots i.lit { background: var(--gold); border-color: var(--gold); box-shadow: none; }
 html[data-reader-theme='paper'] .r-pool-track span { background: linear-gradient(90deg, #c2a565, var(--gold)); }
-html[data-surface='reader'][data-reader-theme='paper'] button:hover:not(:disabled):not(.r-mic):not(.r-theme-choice) { background: var(--ink-2); border-color: var(--gold-dim); }
+html[data-surface='reader'][data-reader-theme='paper'] button:hover:not(:disabled):not(.r-mic):not(.r-theme-choice):not(.r-quiet-link) { background: var(--ink-2); border-color: var(--gold-dim); }
 .r-reading-dialog { width: min(calc(100% - 24px), 520px); max-height: 88dvh; overflow: auto; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 22px; color: var(--text); background: var(--ink-1); font: 16px/1.5 var(--ui); }
 .r-reading-dialog::backdrop { background: rgba(4, 10, 12, .6); }
 .r-reading-body { position: relative; padding: 26px 22px 22px; }
@@ -493,6 +507,20 @@ button.r-credits { align-self: flex-start; background: none; border: none; paddi
 .r-word.peeked { background: rgba(143, 182, 214, 0.18); box-shadow: 0 2px 0 var(--seek); }
 
 .r-continue { display: block; margin: 0 auto 14px; padding: 14px 22px; border-radius: 999px; background: #3a3220; border-color: var(--gold-dim); color: #f6dfa8; font-size: 16px; font-weight: 600; }
+/* Read by screen readers only. */
+.r-sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* Keyboard: the first stop, shown only while focused; jumps past a long passage to the dock. */
+.r-skip { position: fixed; left: 12px; top: calc(10px + env(safe-area-inset-top)); z-index: 20; padding: 10px 14px; border: 1px solid var(--gold); border-radius: 10px; background: var(--ink-1); color: var(--ivory); font: 600 14px/1.2 var(--ui); text-decoration: none; transform: translateY(calc(-100% - 24px)); }
+.r-skip:focus, .r-skip:focus-visible { transform: none; }
+/* ﷺ is a stacked ligature: at caption size it is a smudge. Drawn larger, without changing the line. */
+.r-salutation { font-size: 1.7em; line-height: 0; vertical-align: -0.28em; }
+/* The outcome of a request, said in the dock's status line. */
+.r-status .ok { color: var(--follow); }
+/* Support, quietly, after the surah. */
+.r-credit-support { margin-top: 10px; }
+.r-quiet-link { position: relative; padding: 0; border: 0; background: none; color: var(--muted); font: inherit; text-decoration: underline; text-decoration-color: rgba(147, 164, 163, 0.45); text-underline-offset: 3px; }
+.r-quiet-link::after { content: ''; position: absolute; inset: -12px -8px; }
+.r-quiet-link:hover:not(:disabled) { background: none; color: var(--gold); }
 .r-today { margin: 0 0 18px !important; font-size: 13.5px; color: var(--follow) !important; }
 .r-ayah-follow:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 
@@ -500,9 +528,6 @@ button.r-credits { align-self: flex-start; background: none; border: none; paddi
 .r-welcome { padding-top: 7vh; }
 .r-iqra { margin: 0 0 4px; font-family: 'Uthmanic Hafs', serif; font-size: clamp(64px, 20vw, 104px); line-height: 1.3; color: var(--gold);
   text-shadow: 0 0 40px rgba(207, 170, 98, 0.25); }
-.r-demo { margin: 18px auto 26px; padding: 14px 16px 12px; max-width: 30rem; min-height: 148px; border: 1px solid rgba(207, 170, 98, 0.22); border-radius: 18px; background: rgba(21, 40, 47, 0.45); }
-.r-demo .r-ar { text-align: center; font-size: clamp(26px, 7vw, 34px); line-height: 2.3; }
-.r-demo figcaption { margin-top: 2px; font-size: 13px; color: var(--muted); }
 .r-try { margin-top: 6px; }
 .r-try-label { margin: 0 0 10px !important; font-size: 14px; color: var(--text) !important; }
 .r-quick button { font-size: 14.5px; }
@@ -597,9 +622,8 @@ details.r-privacy p { text-align: left; margin: 8px 0 0 !important; font-size: 1
 /* Reader menu: home, all surahs, listening time, streaming. */
 .r-menu-btn { flex: none; width: 40px; height: 40px; padding: 0; display: grid; place-items: center; border-radius: 12px; margin-right: -4px; }
 .r-top .r-title { flex: 1; }
-.r-support-nav { max-width: 54rem; margin: 0 auto; padding: 8px 16px 0; text-align: right; }
-.r-support-nav button, .about-support { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--gold); border-radius: 12px; background: var(--ink-1); color: var(--gold); font-weight: 650; text-decoration: none; }
-.r-support-nav button:hover, .about-support:hover { background: var(--ink-2); }
+.about-support { display: inline-flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 16px; border: 1px solid var(--gold); border-radius: 12px; background: var(--ink-1); color: var(--gold); font-weight: 650; text-decoration: none; }
+.about-support:hover { background: var(--ink-2); }
 .r-support-status { padding: 14px; border: 1px solid var(--line); border-radius: 12px; color: var(--text); font-size: 14px; line-height: 1.6; }
 .about #support { scroll-margin-top: 85px; }
 .r-menu { display: flex; flex-direction: column; gap: 8px; padding-top: 48px; }
@@ -669,7 +693,21 @@ a.about-ref:hover { text-decoration: underline; }
 .r-dock { padding-top: 30px; background: linear-gradient(180deg, rgba(10, 20, 24, 0) 0, var(--ink-0) 24px); }
 .r-index-more { display: block; min-height: 44px; margin: 12px auto 0; padding: 10px 18px; border-radius: 999px; }
 
-.r-demo { min-height: 0; display: flex; flex-direction: column; justify-content: center; padding: 18px 16px 26px; }
+/* The start page's example of following (FollowDemo.tsx): one ayah per page in a fixed window; the
+   page moves up when the next ayah begins. Plays once, then rests; never by itself with reduced motion. */
+.r-demo { margin: 18px auto 26px; padding: 10px 0 12px; max-width: 30rem; border: 1px solid rgba(207, 170, 98, 0.22); border-radius: 18px; background: rgba(21, 40, 47, 0.45); text-align: left; }
+.r-demo-loading { min-height: 196px; }
+.r-demo-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; }
+.r-demo-badge { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; font: 650 11.5px/1 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.r-demo-where { font: 500 12.5px/1 var(--ui); color: var(--muted); font-variant-numeric: tabular-nums; }
+.r-demo-window { position: relative; overflow: hidden; font-size: clamp(26px, 7vw, 34px); height: calc(2.3em + 24px); }
+.r-demo-pages { transition: transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1); }
+.r-demo .r-demo-line { height: calc(2.3em + 24px); margin: 0; padding: 0 16px; font-size: inherit; line-height: 2.3; text-align: center; white-space: nowrap; }
+.r-demo .r-word { cursor: pointer; }
+.r-demo-controls { display: flex; gap: 8px; padding: 0 14px; }
+.r-demo-controls button { min-height: 44px; padding: 8px 16px; border-radius: 999px; background: var(--ink-2); font: 600 14px/1 var(--ui); }
+.r-demo-caption { margin: 10px 14px 0; font: 400 12.5px/1.45 var(--ui); color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { .r-demo-pages { transition: none; } }
 .r-try-label { margin: 0 auto 10px !important; text-align: center; }
 .r-sub { max-width: 32em; }
 .r-welcome .r-sub { max-width: 34em; }

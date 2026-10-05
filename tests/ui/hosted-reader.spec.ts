@@ -85,7 +85,13 @@ test('shared lifetime totals, donation readback, and browser audio through the p
     await page.getByRole('button', { name: /^Reading appearance/ }).click();
     await page.getByRole('radio', { name: /^Night/ }).click();
     await page.getByRole('button', { name: 'Return to reading', exact: true }).click();
-    await page.locator('.r-support-nav').getByRole('button', { name: /Support Quran Reader/ }).click();
+    // Support sits below the reading and in the menu, never above the welcome or a surah.
+    await expect(page.locator('.r-support-nav')).toHaveCount(0);
+    const supportFromMenu = async () => {
+      await page.getByRole('button', { name: /^Menu/ }).click();
+      await page.getByRole('dialog', { name: 'Menu', exact: true }).getByRole('button', { name: /^Support Quran Reader/ }).click();
+    };
+    await supportFromMenu();
     const support = page.getByRole('dialog', { name: 'Support Quran Reader' });
     await expect(support).toContainText('not tax-deductible');
     await expect(support.getByRole('status')).toContainText('Test checkout — no real money');
@@ -135,9 +141,7 @@ test('shared lifetime totals, donation readback, and browser audio through the p
       await route.fulfill({ response, json: { ...state, billing: null, sponsored: {...state.sponsored, operatingReserve:166154, operatingReserveUsdMicros:6000000, left:state.sponsored.left-166154} } });
     });
     await page.reload();
-    const supportButton = page.locator('.r-support-nav').getByRole('button', { name: 'Support Quran Reader', exact: true });
-    await expect(supportButton).toHaveAccessibleName('Support Quran Reader');
-    await supportButton.click();
+    await supportFromMenu();
     await expect(support.getByRole('status')).toContainText('Online contributions aren’t open yet');
     await expect(support).toContainText('$6.00 set aside for running costs');
     await expect(support).toContainText('This is reserved, not spent.');
