@@ -10,14 +10,14 @@ import { fullCorpus } from '../helpers';
 const TATWEEL = 'ـ';
 const DAGGER_ALIF = 'ٰ';
 /** The documented codepoint mapping for the same marks (source -> font). */
-const MARKS: Readonly<Record<string, string>> = { 'ْ': 'ۡ', '۟': 'ْ', '۫': '۬' };
+const MARKS: Readonly<Record<string, string>> = { 'ْ': 'ۡ', '۟': 'ْ', '۫': '۬', 'ۣ': 'ۜ' };
 /**
  * Its inverse where it is exact. U+06EB (12:11) and U+06EC (in the source itself, 41:44) are both
- * drawn as U+06EC: that pre-existing pair is compared as one mark in the round trip below (the walk in
- * `violation` still checks it codepoint by codepoint).
+ * drawn as U+06EC. Similarly, U+06E3 (52:37) and original U+06DC both render as U+06DC. These pairs
+ * are compared as shared marks below; `violation` still checks every source codepoint separately.
  */
 const UNMARK: Readonly<Record<string, string>> = { 'ۡ': 'ْ', 'ْ': '۟' };
-const foldHighStop = (s: string) => s.replaceAll('۫', '۬');
+const foldSharedMarks = (s: string) => s.replaceAll('۫', '۬').replaceAll('ۣ', 'ۜ');
 
 const hex = (s: string) => [...s].map((c) => c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')).join(' ');
 const text = (codepoints: string) => String.fromCodePoint(...codepoints.split(' ').map((h) => parseInt(h, 16)));
@@ -72,9 +72,20 @@ describe('the dagger alif sits on its letter, as the font draws it', () => {
   });
 
   it('changes nothing else: letters, other marks, digits, spaces and Latin pass through', () => {
-    const untouched = text('0628 0650 0633 0640 0645 0650 0020 0627 0653 0670 0651 06E1 06EC 06E3 06D6 065E 0661 0032 0041 00A0');
+    const untouched = text('0628 0650 0633 0640 0645 0650 0020 0627 0653 0670 0651 06E1 06EC 06DC 06D6 065E 0661 0032 0041 00A0');
     expect(toQpcHafsEncoding(untouched)).toBe(untouched);
     expect(hex(toQpcHafsEncoding(text('0652 06DF 06EB')))).toBe('06E1 0652 06EC');
+  });
+
+  it('52:37 keeps its small low seen in the font-native QPC-Hafs word, without rewriting the source', () => {
+    // Quran.com public /api/v4/verses/by_key/52:37?fields=text_qpc_hafs&words=true&word_fields=text_qpc_hafs
+    // retrieved 2026-10-05: word 7. The pinned font substitutes U+06DC + U+064E with its below-sad seen
+    // ligature (GSUB lookup 8, glyph 294); U+06E3 instead is a full-width placeholder. See rendered proof.
+    const source = '0671 0644 0652 0645 064F 0635 06E3 064E 064A 0652 0637 0650 0631 064F 0648 0646 064E';
+    const qpc = '0671 0644 06E1 0645 064F 0635 06DC 064E 064A 06E1 0637 0650 0631 064F 0648 0646 064E';
+    expect(hex(word('52:37', 6))).toBe(source);
+    expect(hex(toQpcHafsEncoding(word('52:37', 6)))).toBe(qpc);
+    expect(fullCorpus().corpus.verses.filter((v) => v.arabicDisplay.includes('\u06e3')).map((v) => v.key)).toEqual(['52:37']);
   });
 
   it('is stable on its own output where it matters: no further tatweel is ever removed', () => {
@@ -106,7 +117,7 @@ describe('every ayah keeps its source text (all 6,236)', () => {
     for (const v of corpus.verses) {
       const shown = toQpcHafsEncoding(v.arabicDisplay);
       const undone = [...shown].map((c) => UNMARK[c] ?? c).join('');
-      expect(undone, v.key).toBe(foldHighStop(v.arabicDisplay).split(TATWEEL + DAGGER_ALIF).join(DAGGER_ALIF));
+      expect(undone, v.key).toBe(foldSharedMarks(v.arabicDisplay).split(TATWEEL + DAGGER_ALIF).join(DAGGER_ALIF));
       // Word counts (and so word meanings, the recited-word cursor and paging) are unchanged.
       expect(shown.split(/\s+/).length, v.key).toBe(v.arabicDisplay.split(/\s+/).length);
     }

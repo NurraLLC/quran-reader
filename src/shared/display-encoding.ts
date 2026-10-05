@@ -17,9 +17,12 @@
 // displayed. Every other tatweel stays (QPC keeps it before hamza U+0654, small yeh U+06E7, small waw
 // U+06E5). Word count and order are unchanged, so meanings, the recited-word cursor and paging align.
 //
-// Known remaining defect: U+06E3 (small low seen, only in 52:37) still renders unattached; QPC
-// evidence for it is not in the local sample, so it is not guessed. Importing QUL resource 86
-// (QPC-Hafs text) would replace this mapping entirely.
+// Small low seen (52:37): Quran.com's native QPC-Hafs text writes U+06DC where Uthmani writes
+// U+06E3. This font's U+06E3 is a full-width placeholder circle; its U+06DC + fatha contextual
+// ligature draws the small seen below the sad. The display uses that native encoding, never drops
+// the annotation. Verified against the public verse endpoint's text_qpc_hafs and loaded-font pixels
+// (2026-10-05); tests pin the exact word and every source codepoint. Importing QPC-Hafs text would
+// replace this compatibility mapping entirely.
 // Search/recognition never uses this (it reads the Imlaei text). The source text is never changed:
 // tests/corpus/display-encoding.test.ts proves, for all 6,236 ayahs, that these are the only
 // differences between what is shown and the source.
@@ -28,6 +31,7 @@ const MAP: ReadonlyMap<string, string> = new Map([
   [String.fromCodePoint(0x0652), String.fromCodePoint(0x06e1)],
   [String.fromCodePoint(0x06df), String.fromCodePoint(0x0652)],
   [String.fromCodePoint(0x06eb), String.fromCodePoint(0x06ec)],
+  [String.fromCodePoint(0x06e3), String.fromCodePoint(0x06dc)],
 ]);
 const TATWEEL = String.fromCodePoint(0x0640);
 const DAGGER_ALIF = String.fromCodePoint(0x0670);
@@ -41,6 +45,3 @@ export function toQpcHafsEncoding(uthmani: string): string {
   }
   return out;
 }
-
-/** Codepoints verified to render unattached with this font even after re-encoding. */
-export const KNOWN_UNRENDERABLE: ReadonlySet<number> = new Set([0x06e3]);

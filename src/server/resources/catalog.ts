@@ -184,7 +184,7 @@ export class ResourceCatalog {
         stage: { catalogued: true, downloaded: true, validated: true, indexed: true, consumers: r.consumers, evaluated: null },
         coverage: src.role === 'font' ? null : { rows: this.corpus.verses.length, verseKeys: this.corpus.verses.length, rejectedRows: 0 },
         sha256: src.sha256,
-        note: src.role === 'arabicDisplay' ? 'Rendered through a documented re-encoding for the Hafs font (one mark in 52:37 still unrenderable).' : src.licenseStatus,
+        note: src.role === 'arabicDisplay' ? 'Rendered through a documented re-encoding for the Hafs font; the source text is preserved.' : src.licenseStatus,
       });
     }
     out.push({
