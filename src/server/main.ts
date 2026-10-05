@@ -9,7 +9,7 @@ import { parseDonations, StripeBilling } from './billing/stripe';
 import net from 'node:net';
 import path from 'node:path';
 import { buildApp, normalizeBase, type HostedOptions } from './app';
-import { localLinks } from './local-links';
+import { localLinks, savedSessionOptions } from './local-links';
 import { CommandResolver } from './commands/reducer';
 import { Corpus, loadCorpus } from './corpus/load';
 import { ROOT, PROCESSED_DIR } from './corpus/manifest';
@@ -159,7 +159,8 @@ async function main() {
   const latin = { reader: null as LatinReader | null, get() { return this.reader; } };
   const translitFile = path.join(PROCESSED_DIR, 'translit-en.json');
   if (existsSync(translitFile)) setTimeout(() => (latin.reader = new LatinReader(ix, corpus, JSON.parse(readFileSync(translitFile, 'utf8')).verses)), 1000);
-  // Self-hosted: the control and overlay links survive restarts (OBS keeps working); tests pin their own.
+  // Self-hosted: the control and overlay links survive restarts (OBS keeps working), and so do the
+  // owner's sign-in and the ayah on stream (local-links.ts); tests pin their own.
   const links = hostedMode || process.env.QO_OWNER_TOKEN ? null : (() => {
     const dir = process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state');
     mkdirSync(dir, { recursive: true });
@@ -176,8 +177,7 @@ async function main() {
     }
     return { stream, onStream: (st: unknown) => writeFileSync(file, JSON.stringify(st), { mode: 0o600 }) };
   })() : {};
-  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), viewToken: links?.links.view, onViewToken: links?.saveView,
-    style: links?.links.style, onStyle: links?.saveStyle, ...localStream });
+  const session = hostedMode ? undefined : new Session({ ...sessionOptions(false), ...(links ? savedSessionOptions(links) : {}), ...localStream });
   const hosted = hostedMode ? hostedSetup((saved) => new Session({ ...sessionOptions(true), ...saved })) : undefined;
   if (hosted) {
     // Reading without a visitor cookie shares one session that never listens.
@@ -193,8 +193,9 @@ async function main() {
     };
   }
   // QO_OWNER_TOKEN exists only so automated browser tests can open the control page; self-hosted
-  // runs keep a random capability in data/state (see local-links.ts).
-  const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins, ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner });
+  // runs keep a random capability and the sign-in cookie's secret in data/state (see local-links.ts).
+  const { app, ownerToken } = await buildApp({ basePath: base, extraHosts: (process.env.QO_EXTRA_HOSTS ?? '').split(',').filter(Boolean), session, hosted, port, sonioxApiKey: process.env.SONIOX_API_KEY, devOrigins,
+    ownerToken: process.env.QO_OWNER_TOKEN || links?.links.owner, ownerCookie: links?.links.cookie });
   // Loopback by default; a container or VM behind a reverse proxy sets QO_HOST=0.0.0.0.
   if(process.env.QO_REQUIRE_CONTENT_SYNC==='1') {
     const watch=setInterval(()=>{

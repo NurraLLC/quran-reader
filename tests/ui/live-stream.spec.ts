@@ -3,7 +3,14 @@
 // makes the page live, its listening shows no time limit, and when the server restarts (a deploy),
 // listening comes back by itself once it is up, instead of stopping the broadcast: even when the page
 // is back before OBS is, and the day's usual share on this network is already used.
+//
+// A restart is a new process: sessions live in memory and start afresh, while the ledger, the
+// visitor key and the saved overlay links are on disk (main.ts hostedSetup). So the ayah that was on
+// stream is NOT brought back on the hosted service today: keeping it would store what a visitor
+// recited, which overlay-links.ts promises not to, until the owner words that change. Self-hosted
+// runs keep it (tests/session/restart.test.ts).
 import { expect, test } from '@playwright/test';
+import { randomBytes } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -13,6 +20,7 @@ import { buildApp } from '../../src/server/app';
 import { CreditStore } from '../../src/server/billing/credits';
 import { SessionHub } from '../../src/server/billing/hub';
 import { VisitorIdentity } from '../../src/server/billing/identity';
+import { OverlayLinks } from '../../src/server/billing/overlay-links';
 import { CommandResolver } from '../../src/server/commands/reducer';
 import { Session } from '../../src/server/sessions';
 import { fullCorpus } from '../helpers';
@@ -63,12 +71,22 @@ test('live on stream: no time limit, and listening comes back by itself after a 
   credits.reserve('fixture', '127.0.0.1', Date.now() - 1_300_000);
   credits.settle('fixture', Date.now() - 100_000);
   const resolver = new CommandResolver(corpus, null, null);
-  const hub = new SessionHub(() => new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => `${base}/overlay#view=${v}` }));
-  // The server, started again on the same port after a restart (its sessions and ledger are kept, as on disk).
+  // As on disk (overlay-links.db): each visitor's overlay link and look, found again after a restart.
+  const links = new OverlayLinks(':memory:');
+  // Each run of the server has its own sessions, made as main.ts hostedSetup makes them.
+  const newHub = () => new SessionHub((visitor) => {
+    const saved = links.get(visitor);
+    const view = saved?.view ?? randomBytes(18).toString('base64url');
+    if (!saved) links.saveView(visitor, view);
+    return new Session({ corpus, ix, resolver, decisionClient: null, mode: 'deterministic', setup: { soniox: true, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: (v) => `${base}/overlay#view=${v}`,
+      viewToken: view, onViewToken: (v) => links.saveView(visitor, v), style: saved?.style ?? undefined, onStyle: (st) => links.saveStyle(visitor, st) });
+  }, undefined, undefined, (view) => links.visitorOf(view));
+  // The server, started again on the same port after a restart: new sessions; the ledger, the visitor
+  // key and the overlay links are kept, as on disk.
   const start = async () => {
     const { app } = await buildApp({ port, sonioxApiKey: 'test-only', speechEndpoint: `ws://127.0.0.1:${(provider.address() as { port: number }).port}`,
       fetchImpl: (async () => new Response(JSON.stringify({ api_key: 'provider-key-never-in-browser', expires_at: new Date(Date.now() + 60_000).toISOString() }), { status: 201 })) as typeof fetch,
-      hosted: { hub, credits, identity: new VisitorIdentity(Buffer.alloc(48, 7)) },
+      hosted: { hub: newHub(), credits, identity: new VisitorIdentity(Buffer.alloc(48, 7)) },
     });
     await app.listen({ host: '127.0.0.1', port });
     return app;
@@ -95,6 +113,12 @@ test('live on stream: no time limit, and listening comes back by itself after a 
     await page.getByRole('dialog', { name: 'Before you turn on the microphone' }).getByRole('checkbox').check();
     await page.getByRole('button', { name: 'Agree and continue' }).click();
     await expect(hint).toContainText('Recite and the screen follows');
+    // An ayah is on stream when the server goes away.
+    const find = page.getByLabel('Type a reference or what the ayah says');
+    await find.fill('67:2');
+    await find.press('Enter');
+    await expect(screen.locator('article.verse')).toHaveAttribute('aria-label', /67:2/, { timeout: 15_000 });
+    await expect(page.locator('.monitor-head .onair')).toHaveText('On screen');
 
     // The server restarts (a deploy): every connection drops, and nothing answers for a while,
     // longer than the listening library's own three retries. OBS is slower to come back than the page.
@@ -109,15 +133,20 @@ test('live on stream: no time limit, and listening comes back by itself after a 
     await page.waitForTimeout(6_000); // a retry or two, refused as not live (the network's share is used)
     await expect(hint).toHaveText('The connection was lost. Reconnecting by itself…');
     screen = await context.newPage();
-    await screen.goto(overlayLink); // OBS is back
+    await screen.goto(overlayLink); // OBS is back: its saved link finds the visitor's new session
     await expect(hint).toContainText('Recite and the screen follows', { timeout: 30_000 });
     expect(streams).toBeGreaterThan(before);
     await expect(page.getByText('Lost the connection')).toHaveCount(0);
+    // Hosted today: the new session starts with nothing on screen (see the note at the top), on the
+    // control page and in OBS alike, until the broadcaster recites or chooses an ayah again.
+    await expect(page.locator('.monitor-head .onair')).toHaveText('Nothing on screen');
+    await expect(screen.locator('article.verse')).toHaveCount(0);
     expect(errors).toEqual([]);
     await page.getByRole('button', { name: 'Stop listening' }).click();
   } finally {
     await app.close();
     await new Promise<void>((r) => provider.close(() => r()));
     credits.close();
+    links.close();
   }
 });

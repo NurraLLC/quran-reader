@@ -80,6 +80,12 @@ export type SessionOptions = {
   /** A charity stream's settings and donations as last saved, and where a change is saved. */
   stream?: unknown;
   onStream?: (saved: SavedStream) => void;
+  /**
+   * Self-hosted: the ayah the audience was shown before a restart (and whether it was hidden), and
+   * where it is saved whenever the ayah or its hidden state changes (never per highlight step).
+   */
+  initialDisplay?: { key: string; hidden: boolean } | null;
+  onDisplayKey?: (shown: { key: string; hidden: boolean } | null) => void;
   clock?: Clock;
   /** Explicit, bounded, local diagnostic capture of provider token events (no audio). */
   captureDir?: string | null;
@@ -204,7 +210,18 @@ export class Session {
     // can still choose to clear after 3 s.
     this.follower.engine.cfg = { ...this.follower.engine.cfg, keepOnUncertain: true };
     if (o.catalog) attachCatalog(this.follower, o.catalog);
+    // After a restart the stream comes back to the ayah it showed, hidden if it was, and following
+    // carries on from there (the reconnecting control page announces its stream again).
+    const restored = o.initialDisplay ? o.corpus.verse(o.initialDisplay.key) : undefined;
+    if (restored) {
+      this.displayVerse = restored.index;
+      this.trackerVerse = restored.index;
+      this.follower.seek(restored.index);
+      this.blanked = o.initialDisplay!.hidden;
+      this.logEvent('restore', restored.key, this.blanked ? 'hidden' : undefined);
+    }
     this.display = this.buildDisplay();
+    this.shownSaved = restored ? `${restored.key}|${this.blanked}` : '';
   }
 
   // ---------- subscriptions ----------
@@ -335,11 +352,33 @@ export class Session {
       if (this.sentAt.size > 64) this.sentAt.delete(this.sentAt.keys().next().value!);
       for (const fn of this.displayListeners) fn(this.display);
       this.emitControl({ type: 'display', state: this.display });
+      this.rememberShown();
       this.schedulePageTimer();
       if (this.pendingSpeed) this.speed = { revision: this.revision, ...this.pendingSpeed };
     }
     this.pendingSpeed = null;
     this.queueSnapshot();
+  }
+
+  /** `${ayah}|${hidden}` as last saved (onDisplayKey). */
+  private shownSaved = '';
+  private saveWarned = false;
+
+  /** Saves the ayah the audience was shown, and whether it is hidden, when either changes. */
+  private rememberShown() {
+    if (!this.o.onDisplayKey) return;
+    const v = this.display.verse;
+    const shown = v ? { key: v.key, hidden: !this.display.visible } : null;
+    const key = shown ? `${shown.key}|${shown.hidden}` : '';
+    if (key === this.shownSaved) return;
+    this.shownSaved = key;
+    try {
+      this.o.onDisplayKey(shown);
+    } catch (e) {
+      // Best effort: the stream never waits for, or fails with, the disk.
+      if (!this.saveWarned) console.warn('Could not save the ayah on screen for after a restart:', e instanceof Error ? e.message : e);
+      this.saveWarned = true;
+    }
   }
 
   private showVerse(i: number | null) {

@@ -72,6 +72,12 @@ export type AppOptions = {
   sonioxApiKey?: string;
   devOrigins?: string[];
   ownerToken?: string;
+  /**
+   * Local mode: the secret in the owner's sign-in cookie. Self-hosted runs keep it with the saved
+   * links (local-links.ts), so a control page that was open before a restart is still the owner's.
+   * Random per process when not given.
+   */
+  ownerCookie?: string;
   fetchImpl?: typeof fetch;
   /** Server-owned local test provider; never set from a browser request. */
   speechEndpoint?: string;
@@ -163,7 +169,8 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   if (!o.session && !o.hosted) throw new Error('buildApp needs a session (local mode) or hosted options');
   const local = o.session as Session;
   const ownerToken = o.ownerToken ?? randomBytes(24).toString('base64url');
-  const ownerCookie = randomBytes(24).toString('base64url');
+  if (o.ownerCookie !== undefined && !/^[A-Za-z0-9_-]{32,}$/.test(o.ownerCookie)) throw new Error('The owner cookie secret must be at least 32 base64url characters');
+  const ownerCookie = o.ownerCookie ?? randomBytes(24).toString('base64url');
   const host = o.host ?? '127.0.0.1';
   const base = normalizeBase(o.basePath);
   const allowedHosts = new Set([`127.0.0.1:${o.port}`, `localhost:${o.port}`, `[::1]:${o.port}`]);

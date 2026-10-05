@@ -35,6 +35,49 @@ describe('self-hosted links', () => {
     expect(localLinks(file).links).toMatchObject({ style, owner: first.links.owner, view: 'replacementOverlayToken123456789' });
   });
 
+  it('keep the owner cookie and the ayah last shown through a restart', () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'qo-shown-')), 'local-links.json');
+    const first = localLinks(file);
+    expect(first.links.cookie).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(first.links.cookie).not.toBe(first.links.owner);
+    expect(first.links.display ?? null).toBeNull();
+    first.saveDisplay({ key: '67:2', hidden: false });
+    const restarted = localLinks(file);
+    expect(restarted.links.cookie).toBe(first.links.cookie);
+    expect(restarted.links.display).toEqual({ key: '67:2', hidden: false });
+    restarted.saveDisplay({ key: '67:2', hidden: true });
+    expect(localLinks(file).links.display).toEqual({ key: '67:2', hidden: true });
+    // A new look or a replaced overlay link keeps both.
+    restarted.saveStyle({ ...DEFAULT_STYLE, englishScale: 1.2 });
+    restarted.saveView('replacementOverlayToken123456789');
+    expect(localLinks(file).links).toMatchObject({ owner: first.links.owner, cookie: first.links.cookie, display: { key: '67:2', hidden: true } });
+    // Nothing on screen is kept too: a restart never brings back an ayah the screen had let go.
+    restarted.saveDisplay(null);
+    expect(localLinks(file).links.display ?? null).toBeNull();
+    expect(localLinks(file).links.cookie).toBe(first.links.cookie);
+  });
+
+  it('give links saved before cookies were kept a cookie once, and ignore a damaged cookie or ayah', () => {
+    const file = path.join(mkdtempSync(path.join(tmpdir(), 'qo-shown-')), 'local-links.json');
+    const owner = 'ownerCapabilityFromAnOlderRun0123456789';
+    const view = 'overlayLinkFromAnOlderRun01234';
+    writeFileSync(file, JSON.stringify({ owner, view }));
+    const upgraded = localLinks(file).links;
+    expect(upgraded).toMatchObject({ owner, view });
+    expect(upgraded.cookie).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(localLinks(file).links.cookie).toBe(upgraded.cookie); // created once, then kept
+    writeFileSync(file, JSON.stringify({ ...upgraded, cookie: 'short' }));
+    const repaired = localLinks(file).links;
+    expect(repaired).toMatchObject({ owner, view });
+    expect(repaired.cookie).toMatch(/^[A-Za-z0-9_-]{32,}$/);
+    expect(repaired.cookie).not.toBe('short');
+    for (const display of [{ key: '67:2<script>', hidden: false }, { key: '67:2', hidden: 'yes' }, '67:2', { key: 672, hidden: false }]) {
+      writeFileSync(file, JSON.stringify({ ...repaired, display }));
+      expect(localLinks(file).links).toMatchObject({ owner, view, cookie: repaired.cookie });
+      expect(localLinks(file).links.display ?? null).toBeNull();
+    }
+  });
+
   it('loads old appearance records and ignores damaged settings without replacing valid links', () => {
     const file = path.join(mkdtempSync(path.join(tmpdir(), 'qo-look-')), 'local-links.json');
     const first = localLinks(file);
