@@ -153,7 +153,7 @@ export class Session {
   private pinned = false;
   private startHint: number | null = null;
   private style: DisplayStyle = { ...DEFAULT_STYLE };
-  private englishPage = 0;
+  private englishPage: number | null = null;
   private arabicPage: number | null = null;
   private progress: number | null = null;
   private cursor: DisplayState['cursor'] = null;
@@ -473,7 +473,7 @@ export class Session {
 
   private showVerse(i: number | null) {
     if (i !== this.displayVerse) {
-      this.englishPage = 0;
+      this.englishPage = null;
       this.arabicPage = null;
       this.progress = null;
       this.cursor = null;
@@ -495,7 +495,7 @@ export class Session {
     if (!key) return;
     this.pageTimer = this.clock.setTimeout(() => {
       this.pageTimer = null;
-      this.englishPage = (this.englishPage + 1) % pages;
+      this.englishPage = ((this.englishPage ?? 0) + 1) % pages;
       this.publish();
     }, secs * 1000);
   }
@@ -594,6 +594,9 @@ export class Session {
         return this.publish();
       case 'arabic_auto':
         this.arabicPage = null;
+        return this.publish();
+      case 'english_auto':
+        this.englishPage = null;
         return this.publish();
       case 'layout':
         if (msg.revision === this.revision && msg.key === this.verseLabel(this.displayVerse)) {

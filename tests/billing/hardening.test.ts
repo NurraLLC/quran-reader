@@ -65,6 +65,32 @@ describe('saved overlay links', () => {
 });
 
 describe('the display while reciting', () => {
+  it('distinguishes the first chosen translation page from automatic following and resets on a new ayah', () => {
+    const s = new Session(options());
+    s.handle({ type: 'goto', key: '2:282' });
+    expect(s.display.englishPage).toBeNull();
+    s.handle({ type: 'page', region: 'english', page: 0 });
+    expect(s.display.englishPage).toBe(0);
+    s.handle({ type: 'english_auto' });
+    expect(s.display.englishPage).toBeNull();
+    s.handle({ type: 'page', region: 'english', page: 3 });
+    s.handle({ type: 'goto', key: '2:255' });
+    expect(s.display.englishPage).toBeNull();
+  });
+
+  it('turns from automatic page one and wraps a timed translation without restoring recitation following', async () => {
+    const clock = new VirtualClock();
+    const s = new Session(options({ clock }));
+    s.handle({ type: 'style', patch: { translationPageSeconds: 1 } });
+    s.handle({ type: 'goto', key: '2:282' });
+    s.handle({ type: 'layout', revision: s.display.revision, key: '2:282', englishPages: 2, arabicPages: 3, promotedToFullFrame: false });
+    expect(s.display.englishPage).toBeNull();
+    await clock.advance(1000);
+    expect(s.display.englishPage).toBe(1);
+    await clock.advance(1000);
+    expect(s.display.englishPage).toBe(0);
+  });
+
   it('turns translation pages on time while the highlight moves', async () => {
     const clock = new VirtualClock();
     const s = new Session(options({ clock }));

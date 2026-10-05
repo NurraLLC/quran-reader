@@ -50,6 +50,86 @@ const pageOf = async (page: Page, selector: string): Promise<[number, number]> =
   return m ? [Number(m[1]), Number(m[2])] : [1, 1];
 };
 
+/** A fallback serif can pass paging assertions while measuring a different charity-panel layout. */
+async function sceneFontsLoaded(page: Page) {
+  const loaded = await page.evaluate(async () => {
+    const faces = await Promise.all(['500 32px "Cormorant Garamond"', '400 20px "Marcellus SC"'].map((font) => document.fonts.load(font, 'Translation')));
+    return faces.map((group) => group.map((face) => ({ family: face.family, weight: face.weight, status: face.status })));
+  });
+  for (const group of loaded) {
+    expect(group.length).toBeGreaterThan(0);
+    expect(group.every((face) => face.status === 'loaded')).toBe(true);
+  }
+  await test.info().attach('charity fonts loaded', { body: JSON.stringify(loaded), contentType: 'application/json' });
+}
+
+test('page arrows start where recitation is shown and a chosen first translation page stays chosen', async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const c = await context.newPage();
+  const errors: string[] = [];
+  c.on('pageerror', (e) => errors.push(e.message));
+  await c.goto(`/control#owner=${OWNER}`);
+  await expect(c.locator('.topbar')).toBeVisible();
+  const send = await controlSocket(c);
+  await send({ type: 'style', patch: { layout: 'lowerthird', language: 'both', readingMode: 'follow', translationPageSeconds: 0 } });
+  await send({ type: 'english_auto' });
+  await send({ type: 'arabic_auto' });
+  await send({ type: 'blank', on: false });
+  await send({ type: 'hold', on: false });
+  const epoch = Date.now();
+  await send({ type: 'capture', captureEpoch: epoch, event: 'recording' });
+  await request(c, '2:282');
+  const words = searchWords('2:282');
+  await send({ type: 'transcript', captureEpoch: epoch, seq: 0, receivedAt: 0, tokens: words.slice(0, 70).map((text) => ({ text: ` ${text}`, isFinal: true })) });
+  const en = c.locator('.pager > span', { hasText: 'Translation page' });
+  const ar = c.locator('.pager > span', { hasText: 'Arabic part' });
+  await expect(en).toContainText('follows your recitation');
+  await expect.poll(async () => (await pageOf(c, '.preview .english .cont'))[0]).toBeGreaterThan(1);
+  const [e, nE] = await pageOf(c, '.preview .english .cont');
+  const [a, nA] = await pageOf(c, '.preview .cont-ar');
+  expect(e).toBeLessThan(nE);
+  expect(a).toBeGreaterThan(1);
+  expect(a).toBeLessThan(nA);
+  await en.getByTitle('Next translation page (after the last, back to following)').click();
+  await expect(c.locator('.preview .english .cont')).toContainText(`Translation ${e + 1}/${nE}`);
+  await expect(en).toContainText(`Translation page ${e + 1}/${nE}`);
+  await en.getByTitle('Previous translation page').click();
+  await expect(c.locator('.preview .english .cont')).toContainText(`Translation ${e}/${nE}`);
+  await ar.getByTitle('Previous Arabic part').click();
+  await expect(c.locator('.preview .cont-ar')).toHaveAttribute('aria-label', `Arabic part ${a - 1} of ${nA}`);
+  await ar.getByRole('button', { name: 'Follow recitation' }).click();
+  await expect(c.locator('.preview .cont-ar')).toHaveAttribute('aria-label', `Arabic part ${a} of ${nA}`);
+  await ar.getByTitle('Next Arabic part').click();
+  await expect(c.locator('.preview .cont-ar')).toHaveAttribute('aria-label', `Arabic part ${a + 1} of ${nA}`);
+  await send({ type: 'page', region: 'english', page: 0 });
+  await expect(c.locator('.preview .english .cont')).toContainText(`Translation 1/${nE}`);
+  await expect(en).not.toContainText('follows your recitation');
+  await send({ type: 'transcript', captureEpoch: epoch, seq: 1, receivedAt: 0, tokens: words.slice(70, 75).map((text) => ({ text: ` ${text}`, isFinal: true })) });
+  await expect(c.locator('.preview .english .cont')).toContainText(`Translation 1/${nE}`);
+  await send({ type: 'page', region: 'english', page: nE - 1 });
+  await expect(c.locator('.preview .english .cont')).toContainText(`Translation ${nE}/${nE}`);
+  await en.getByTitle('Next translation page (after the last, back to following)').click();
+  await expect(en).toContainText('follows your recitation');
+  expect((await pageOf(c, '.preview .english .cont'))[0]).toBeGreaterThan(1);
+  // A selected page from a larger layout clamps in both the label and the measured preview.
+  await send({ type: 'page', region: 'english', page: 200 });
+  await send({ type: 'style', patch: { layout: 'fullframe' } });
+  await expect(c.locator('.preview .stage')).toHaveAttribute('data-layout', 'fullframe');
+  await expect.poll(async () => {
+    const [page, count] = await pageOf(c, '.preview .english .cont');
+    return en.innerText().then((s) => s.includes(`Translation page ${page}/${count}`));
+  }).toBe(true);
+  await send({ type: 'capture', captureEpoch: epoch, event: 'stopped' });
+  await expect(c.locator('.topbar')).toContainText('Not listening');
+  await request(c, '2:255');
+  await request(c, '2:282');
+  await expect(en).toContainText('follows your recitation');
+  mkdirSync('test-results/product-pass', { recursive: true });
+  await c.screenshot({ path: 'test-results/product-pass/paging-regression-fixed.png' });
+  expect(errors).toEqual([]);
+  await context.close();
+});
+
 /** The small credit pill never covers text (it takes the corner away from the captions). */
 async function creditClear(page: Page) {
   const hits = await page.evaluate(() => {
@@ -145,6 +225,7 @@ test('charity preview uses the actual scene and reaches every translation page i
   await audience.setViewportSize({ width: 1920, height: 1080 });
   audience.on('pageerror', (e) => errors.push(e.message));
   await audience.goto(url!);
+  await sceneFontsLoaded(audience);
   const marker = audience.locator('.english .cont');
   const previewMarker = c.locator('.preview .english .cont');
   await expect(marker).toContainText('Translation 1/');
@@ -200,6 +281,7 @@ test('every audience renderer turns its own translation pages with the recitatio
   };
   const overlay = await open(readingUrl!.replace('#bg=solid&', '#'));
   const scene = await open(sceneUrl!);
+  await sceneFontsLoaded(scene);
   const [, overlayTotal] = await pageOf(overlay, '.english .cont');
   const [, sceneTotal] = await pageOf(scene, '.english .cont');
   // The charity panel needs more pages than the overlay the operator's preview measures.
@@ -223,7 +305,7 @@ test('every audience renderer turns its own translation pages with the recitatio
   await send({ type: 'page', region: 'english', page: sceneTotal - 1 });
   await expect(scene.locator('.english .cont')).toHaveText(`Translation ${sceneTotal}/${sceneTotal}`);
   await expect(overlay.locator('.english .cont')).toHaveText(`Translation ${overlayTotal}/${overlayTotal}`);
-  await send({ type: 'page', region: 'english', page: 0 });
+  await send({ type: 'english_auto' });
   expect(errors).toEqual([]);
   await context.close();
 });
@@ -282,7 +364,7 @@ test('Stream captions page a long ayah inside the caption band instead of coveri
       for (const p of outputs) await keptInPanel(p);
     }
     expect(norm(english.join(' '))).toBe(norm(source.english));
-    await send({ type: 'page', region: 'english', page: 0 });
+    await send({ type: 'english_auto' });
     mkdirSync('test-results/product-pass', { recursive: true });
     await reading.screenshot({ path: `test-results/product-pass/captions-${key.replace(':', '-')}.png` });
   }

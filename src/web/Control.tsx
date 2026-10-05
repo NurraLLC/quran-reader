@@ -7,7 +7,8 @@ import { OWN_KEY_SHAPE, ownSonioxKey, setOwnSonioxKey, SonioxCapture, type Captu
 import { access, applyDisplay, applySnapshot, connect, formatListening, listeningLine, u } from './net';
 import { NurraBadge } from './Nurra';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
-import { StageFrame, VerseDisplay, translationPageAt, useFontsReady, type LayoutInfo } from './VerseDisplay';
+import { StageFrame, VerseDisplay, useFontsReady, type LayoutInfo } from './VerseDisplay';
+import { shownPages } from './display-pages';
 import { money } from './stream-format';
 import { OverlayAppearance } from './OverlayAppearance';
 import { REQUEST_PRIVACY } from './privacy-copy';
@@ -322,16 +323,10 @@ export function Control() {
   const listening = cap.listening;
   const d = snap.display;
   const lay = measured && measured.key === d.verse?.key ? measured : null;
-  // The translation page the preview shows: while the broadcaster has not paged (page 1, no timer),
-  // every output turns its own pages with the recitation (the renderer's own rule); this is the preview's.
-  const translationFollows = d.englishPage === 0 && !d.style.translationPageSeconds;
-  const translationPage = (() => {
-    const n = lay?.englishPages ?? 1;
-    if (!translationFollows || !lay) return d.englishPage % n;
-    const words = d.verse ? toQpcHafsEncoding(d.verse.arabic).split(/\s+/).filter(Boolean).length : 0;
-    const at = d.cursor && words ? (d.cursor.from + 1) / words : d.progress;
-    return at === null ? 0 : translationPageAt(lay.englishPageWords, at);
-  })();
+  // Labels and arrows use the preview's actual page, including automatic following and clamping.
+  const translationFollows = d.englishPage === null && !d.style.translationPageSeconds;
+  const words = d.verse ? toQpcHafsEncoding(d.verse.arabic).split(/\s+/).filter(Boolean).length : 0;
+  const { arabic: arabicPage, english: translationPage } = lay ? shownPages(lay, d, words) : { arabic: 0, english: 0 };
   // First use: the three steps, confirmed in place when OBS opens the link (then Done). A returning
   // broadcaster sees one folded line until OBS connects, and nothing once it has.
   const showFirstRun = overlayOpen ? !obsSeenAtLoad.current && !firstRunDone : true;
@@ -412,18 +407,19 @@ export function Control() {
             <div className="pager">
               {lay.arabicPages > 1 && (
                 <span>
-                  Arabic {d.arabicPage === null ? 'follows your recitation' : `part ${d.arabicPage + 1}/${lay.arabicPages}`}
-                  <button onClick={() => send({ type: 'page', region: 'arabic', page: Math.max(0, (d.arabicPage ?? 0) - 1) })}>‹</button>
-                  <button onClick={() => send({ type: 'page', region: 'arabic', page: Math.min(lay.arabicPages - 1, (d.arabicPage ?? 0) + 1) })}>›</button>
+                  Arabic part {arabicPage + 1}/{lay.arabicPages}{d.arabicPage === null ? ' · follows your recitation' : ''}
+                  <button title="Previous Arabic part" onClick={() => send({ type: 'page', region: 'arabic', page: Math.max(0, arabicPage - 1) })}>‹</button>
+                  <button title="Next Arabic part" onClick={() => send({ type: 'page', region: 'arabic', page: Math.min(lay.arabicPages - 1, arabicPage + 1) })}>›</button>
                   {d.arabicPage !== null && <button onClick={() => send({ type: 'arabic_auto' })}>Follow recitation</button>}
                 </span>
               )}
               {lay.englishPages > 1 && (
                 <span>
                   Translation page {translationPage + 1}/{lay.englishPages}{translationFollows ? ' · follows your recitation' : ''}
-                  <button title="Previous translation page" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + lay.englishPages - 1) % lay.englishPages })}>‹</button>
-                  <button title="Next translation page (after the last, back to following)" onClick={() => send({ type: 'page', region: 'english', page: (d.englishPage + 1) % lay.englishPages })}>›</button>
-                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : translationFollows ? '› pages by hand' : 'back to page 1 to follow again'}</span>
+                  <button title="Previous translation page" onClick={() => send({ type: 'page', region: 'english', page: (translationPage + lay.englishPages - 1) % lay.englishPages })}>‹</button>
+                  <button title="Next translation page (after the last, back to following)" onClick={() => send(translationPage === lay.englishPages - 1 ? { type: 'english_auto' } : { type: 'page', region: 'english', page: translationPage + 1 })}>›</button>
+                  {d.englishPage !== null && <button onClick={() => send({ type: 'english_auto' })}>Follow recitation</button>}
+                  <span className="muted">{d.style.translationPageSeconds ? `turns every ${d.style.translationPageSeconds} s` : translationFollows ? '› pages by hand' : 'page chosen by hand'}</span>
                 </span>
               )}
             </div>

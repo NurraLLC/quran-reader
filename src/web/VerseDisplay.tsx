@@ -8,6 +8,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { DisplayState } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraWordmark } from './Nurra';
+import { shownPages, type PageWords } from './display-pages';
 
 type Rgb = [number, number, number];
 const WHITE: Rgb = [255, 255, 255];
@@ -54,15 +55,13 @@ export const ENGLISH_FONT = "'Charter', 'Iowan Old Style', 'Palatino Linotype', 
 export const NURRA_ENGLISH_FONT = "'Cormorant Garamond', 'Palatino Linotype', Georgia, serif";
 export const NURRA_ENGLISH_WEIGHT = 500;
 
-export type LayoutInfo = {
+export type LayoutInfo = PageWords & {
   key: string;
   englishPages: number;
   arabicPages: number;
   promotedToFullFrame: boolean;
   arabicPx: number;
   englishPx: number;
-  /** Words on each translation page (page-local: the control page names the page its preview shows). */
-  englishPageWords: number[];
 };
 
 type Lines = string[][];
@@ -114,49 +113,6 @@ function chunk<T>(xs: T[], n: number): T[][] {
   const out: T[][] = [];
   for (let i = 0; i < xs.length; i += Math.max(1, n)) out.push(xs.slice(i, i + Math.max(1, n)));
   return out.length ? out : [[]];
-}
-
-/**
- * The translation page holding the recitation's place `at` (the share of the ayah's words recited):
- * a page is shown once the recitation reaches the share of the translation that comes before it. The
- * translation is not aligned with the Arabic word for word, so this follows the recitation's progress.
- */
-function pageAt(pages: Lines[], at: number): number {
-  return translationPageAt(pages.map((p) => p.reduce((n, l) => n + l.length, 0)), at);
-}
-
-/** pageAt by the words on each page (also used by the control page for the page its preview shows). */
-export function translationPageAt(words: number[], at: number): number {
-  const total = words.reduce((a, b) => a + b, 0) || 1;
-  let page = 0;
-  for (let i = 1, before = words[0]; i < words.length; before += words[i], i++) if (before / total <= at) page = i;
-  return page;
-}
-
-/**
- * The Arabic and translation page a renderer shows. Each renderer pages by its own count (the overlay,
- * the reading screen and the charity panel can differ from the preview the broadcaster pages by), so a
- * chosen page past the last one holds the last. The Arabic follows the recited word unless a part was
- * chosen; the translation follows the recitation's place while nobody has paged it (page 1 and no page
- * timer), in every language that shows it. `words` is the ayah's number of display words.
- */
-function shownPages(plan: Plan, state: DisplayState, words: number): { arabic: number; english: number } {
-  let arabic = 0;
-  const nA = plan.arabicPages.length;
-  if (state.arabicPage !== null) arabic = Math.min(state.arabicPage, nA - 1);
-  else if (state.cursor && nA > 1) {
-    for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= state.cursor.from) arabic = i;
-  } else if (state.progress !== null && nA > 1) {
-    const total = plan.arabicPageWordStarts[nA - 1] + plan.arabicPages[nA - 1].reduce((n, l) => n + l.length, 0);
-    const word = Math.floor(state.progress * total);
-    for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= word) arabic = i;
-  }
-  const nE = plan.englishPages.length;
-  let english = Math.min(state.englishPage, nE - 1);
-  const at = state.cursor && words ? (state.cursor.from + 1) / words : state.progress;
-  if (state.style.language !== 'arabic' && nE > 1 && state.englishPage === 0 && !state.style.translationPageSeconds && at !== null)
-    english = pageAt(plan.englishPages, at);
-  return { arabic, english };
 }
 
 /** No-break space: binds an ayah-end ornament to the word before it. */
@@ -640,6 +596,10 @@ export function VerseDisplay({
   const planKey = v ? `${v.key}|${state.group?.map((g) => g.key).join(',')}|${state.next?.key}|${state.style.layout}|${state.style.readingMode}|${state.style.arabicScale}|${state.style.englishScale}|${state.style.language}|${state.style.showNext}|${fw}x${fh}|${theme ?? ''}` : '';
   // Layout is computed synchronously from measured line boxes before paint.
   const plan = useMemo(() => (fontsReady && v ? planFor(state, true, geo) : null), [planKey, fontsReady]); // eslint-disable-line react-hooks/exhaustive-deps
+  const pageWords = useMemo<PageWords>(() => ({
+    arabicPageWords: plan?.arabicPages.map((p) => p.reduce((n, l) => n + l.length, 0)) ?? [0],
+    englishPageWords: plan?.englishPages.map((p) => p.reduce((n, l) => n + l.length, 0)) ?? [0],
+  }), [plan]);
 
   // Keep a passage mounted while its highlight moves. New ayahs appear together at the measured
   // reading size; scripture never shrinks or moves through an entrance transition.
@@ -657,7 +617,7 @@ export function VerseDisplay({
       promotedToFullFrame: plan.promoted,
       arabicPx: plan.arabicPx,
       englishPx: plan.englishPx,
-      englishPageWords: plan.englishPages.map((p) => p.reduce((n, l) => n + l.length, 0)),
+      ...pageWords,
     };
     const k = JSON.stringify(info);
     if (k !== lastReported.current) {
@@ -686,7 +646,7 @@ export function VerseDisplay({
   const visible = state.visible && !!plan && !!v;
   const lang = state.style.language;
   const displayWords = v ? toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean) : [];
-  const { arabic: arabicPage, english: englishPage } = plan && v ? shownPages(plan, state, displayWords.length) : { arabic: 0, english: 0 };
+  const { arabic: arabicPage, english: englishPage } = plan && v ? shownPages(pageWords, state, displayWords.length) : { arabic: 0, english: 0 };
 
   const layout = plan?.layout ?? state.style.layout;
   // Word focus shows one Arabic word; with English only it reads as follow.

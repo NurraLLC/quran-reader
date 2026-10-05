@@ -76,7 +76,8 @@ export const DisplayStateSchema = z.object({
   visible: z.boolean(),
   verse: DisplayVerseSchema.nullable(),
   style: DisplayStyleSchema,
-  englishPage: z.number().int().nonnegative(),
+  /** null = follow recitation progress (with no page timer), number = broadcaster-chosen page. */
+  englishPage: z.number().int().nonnegative().nullable(),
   /** null = follow recitation progress (when available), number = broadcaster-chosen page. */
   arabicPage: z.number().int().nonnegative().nullable(),
   /** Recited position within the verse as a fraction of its words, only for paging long verses. */
@@ -243,6 +244,7 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
     promotedToFullFrame: z.boolean(),
   }),
   z.object({ type: z.literal('arabic_auto') }),
+  z.object({ type: z.literal('english_auto') }),
   z.object({ type: z.literal('mode'), mode: TrackerModeSchema }),
   z.object({ type: z.literal('start_hint'), key: z.string().max(8).nullable() }),
   z.object({ type: z.literal('uncertain_policy'), keep: z.boolean() }),
