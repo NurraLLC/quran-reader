@@ -114,6 +114,45 @@ function chunk<T>(xs: T[], n: number): T[][] {
   return out.length ? out : [[]];
 }
 
+/**
+ * The translation page holding the recitation's place `at` (the share of the ayah's words recited):
+ * a page is shown once the recitation reaches the share of the translation that comes before it. The
+ * translation is not aligned with the Arabic word for word, so this follows the recitation's progress.
+ */
+function pageAt(pages: Lines[], at: number): number {
+  const words = pages.map((p) => p.reduce((n, l) => n + l.length, 0));
+  const total = words.reduce((a, b) => a + b, 0) || 1;
+  let page = 0;
+  for (let i = 1, before = words[0]; i < pages.length; before += words[i], i++) if (before / total <= at) page = i;
+  return page;
+}
+
+/**
+ * The Arabic and translation page a renderer shows. Each renderer pages by its own count (the overlay,
+ * the reading screen and the charity panel can differ from the preview the broadcaster pages by), so a
+ * chosen page past the last one holds the last. The Arabic follows the recited word unless a part was
+ * chosen; the translation follows the recitation's place while nobody has paged it (page 1 and no page
+ * timer), in every language that shows it. `words` is the ayah's number of display words.
+ */
+function shownPages(plan: Plan, state: DisplayState, words: number): { arabic: number; english: number } {
+  let arabic = 0;
+  const nA = plan.arabicPages.length;
+  if (state.arabicPage !== null) arabic = Math.min(state.arabicPage, nA - 1);
+  else if (state.cursor && nA > 1) {
+    for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= state.cursor.from) arabic = i;
+  } else if (state.progress !== null && nA > 1) {
+    const total = plan.arabicPageWordStarts[nA - 1] + plan.arabicPages[nA - 1].reduce((n, l) => n + l.length, 0);
+    const word = Math.floor(state.progress * total);
+    for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= word) arabic = i;
+  }
+  const nE = plan.englishPages.length;
+  let english = Math.min(state.englishPage, nE - 1);
+  const at = state.cursor && words ? (state.cursor.from + 1) / words : state.progress;
+  if (state.style.language !== 'arabic' && nE > 1 && state.englishPage === 0 && !state.style.translationPageSeconds && at !== null)
+    english = pageAt(plan.englishPages, at);
+  return { arabic, english };
+}
+
 /** No-break space: binds an ayah-end ornament to the word before it. */
 const NBSP = String.fromCharCode(0xa0);
 const AR_LH = 1.95;
@@ -170,7 +209,8 @@ type Plan = {
   /** A passage keeps the preview's room from its first ayah (the preview arrives with its last), so
    *  nothing moves when it arrives: that room's height. null = the preview takes its natural height. */
   nextRoom: number | null;
-  /** A passage's translation box keeps the height of its longest translation (each ayah shows its own). */
+  /** A passage's translation box keeps the height of its longest translation (each ayah shows its own);
+   *  a paged translation keeps the height of its fullest page, so turning a page never moves the Arabic. */
   englishMinH: number | null;
   /** Space between Arabic lines for the recited word's meaning (0 when no meaning is shown). */
   band: number;
@@ -234,6 +274,9 @@ function panelGeo(frame: { width: number; height: number }, theme: 'nurra' | und
 
 const FULL: Geometry = { width: 1560, height: 812, refH: 64, gap: 34 };
 const LOWER: Geometry = { width: 1600, height: 318, refH: 48, gap: 16 };
+/** A continuation marker (.cont): its 6px top margin, then its 19px line at 1.2. */
+const MARK_TOP = 6;
+const MARK_H = MARK_TOP + 23;
 /** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
 const NEXT_H = 160;
 /** Height the surah banner takes on a surah's opening screen (full frame only). */
@@ -316,6 +359,15 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
     passage: !!wordMeta,
     banner: banner && layout === 'fullframe',
   });
+  const wordStarts = (pages: Lines[]) => {
+    const starts: number[] = [];
+    let count = 0;
+    for (const p of pages) {
+      starts.push(count);
+      count += p.reduce((n, l) => n + l.length, 0);
+    }
+    return starts;
+  };
 
   if (lowerWanted && geo.lower && state.style.readingMode !== 'word') {
     if (group) return planFor(state, false, geo);
@@ -348,23 +400,19 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
   const arLinesPerPage = Math.max(1, Math.floor((body * arShare) / (a * AR_LH)));
   const enLinesPerPage = Math.max(1, Math.floor((body - arH(Math.min(al.length, arLinesPerPage), a)) / (e * EN_LH)));
   const arabicPages = chunk(al, arLinesPerPage);
-  const starts: number[] = [];
-  let count = 0;
-  for (const p of arabicPages) {
-    starts.push(count);
-    count += p.reduce((n, l) => n + l.length, 0);
-  }
+  const englishPages = el.length ? chunk(el, enLinesPerPage) : [[]];
   return {
     layout: 'fullframe',
     promoted,
     arabicPx: a,
     englishPx: e,
     arabicPages,
-    englishPages: el.length ? chunk(el, enLinesPerPage) : [[]],
-    arabicPageWordStarts: starts,
+    englishPages,
+    arabicPageWordStarts: wordStarts(arabicPages),
     next: null,
     nextRoom: null,
-    englishMinH: null,
+    // The translation turns with the recitation: a shorter last page keeps the full page's height.
+    englishMinH: englishPages.length > 1 ? Math.ceil(enLinesPerPage * e * EN_LH) + MARK_H : null,
     band: b,
     wordMeta: null,
     enMeta: null,
@@ -560,30 +608,13 @@ export function VerseDisplay({
   const panelSize = frame ? { width: frame.width, height: frame.height } : undefined;
   if (!fontsReady) return <div className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : undefined} data-theme={theme} data-empty="true" style={panelSize} />;
   const visible = state.visible && !!plan && !!v;
-
-  let arabicPage = 0;
-  let englishPage = 0;
-  if (plan && v) {
-    const nA = plan.arabicPages.length;
-    if (state.arabicPage !== null) arabicPage = Math.min(state.arabicPage, nA - 1);
-    else if (state.cursor && nA > 1) {
-      for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= state.cursor.from) arabicPage = i;
-    } else if (state.progress !== null && nA > 1) {
-      const total = plan.arabicPageWordStarts[nA - 1] + plan.arabicPages[nA - 1].reduce((n, l) => n + l.length, 0);
-      const word = Math.floor(state.progress * total);
-      for (let i = 0; i < nA; i++) if (plan.arabicPageWordStarts[i] <= word) arabicPage = i;
-    }
-    englishPage = state.englishPage % plan.englishPages.length;
-    // English only: a translation that needs pages follows recitation progress through the ayah.
-    if (state.style.language === 'english' && plan.englishPages.length > 1 && state.englishPage === 0 && state.progress !== null)
-      englishPage = Math.min(plan.englishPages.length - 1, Math.floor(state.progress * plan.englishPages.length));
-  }
+  const lang = state.style.language;
+  const displayWords = v ? toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean) : [];
+  const { arabic: arabicPage, english: englishPage } = plan && v ? shownPages(plan, state, displayWords.length) : { arabic: 0, english: 0 };
 
   const layout = plan?.layout ?? state.style.layout;
-  const lang = state.style.language;
   // Word focus shows one Arabic word; with English only it reads as follow.
   const mode = lang === 'english' && state.style.readingMode === 'word' ? 'follow' : (state.style.readingMode ?? 'follow');
-  const displayWords = v ? toQpcHafsEncoding(v.arabic).split(/\s+/).filter(Boolean) : [];
   const currentInGroup = plan?.passage && state.group && v ? state.group.findIndex((g) => g.key === v.key) : 0;
   const relOf = (ayah: number) => (ayah < currentInGroup ? 'past' : ayah > currentInGroup ? 'future' : 'current');
   // The reciter has reached the last word: what comes next brightens (preview line or next ayah in the passage).
