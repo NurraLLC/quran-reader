@@ -81,7 +81,7 @@ export function About() {
         <section>
           <h2>Why</h2>
           <p>
-            Whether you recite from memory or read along, it helps when the page keeps your place. We wanted that for everyone: the student checking their hifz, the person who wants to understand each word as they recite, the qari sharing their tilawah on a stream. No account, no ads, and nothing standing between anyone and the Quran.
+            Whether you recite from memory or read along, it helps when the page keeps your place. We wanted that for everyone: the student revising their hifz, the person who wants to understand each word as they recite, the qari sharing their tilawah on a stream. No account, no ads, and nothing standing between anyone and the Quran.
           </p>
         </section>
 
@@ -105,7 +105,8 @@ export function About() {
           <h2>How it works</h2>
           <ul>
             <li>Listening starts only when you turn on the microphone. {audioRoute(me?.mode ?? null)} {transcriptUse(me?.mode ?? null)} {SILENCE_CONTROL} <a href={u('/privacy.html')}>Privacy details</a>.</li>
-            <li>Quran text, word meanings, transliteration and the Uthmani display font are provided through <a href="https://quran.foundation">Quran Foundation</a>. The English translation is Saheeh International. The reader never generates scripture or translations.</li>
+            <li>It follows your place as you recite; it doesn’t grade recitation or mark mistakes.</li>
+            <li>Arabic text, word meanings and transliteration: <a href="https://quran.com">Quran.com</a> (<a href="https://quran.foundation">Quran Foundation</a>). English translation: Saheeh International (Dar Abul-Qasim). Arabic font: KFGQPC HAFS Uthmanic Script, by the King Fahd Glorious Quran Printing Complex. The reader never generates scripture or translations.</li>
             <li>The code is open. Anyone can read it, check it, or run their own copy for free: <a href={REPO}>github.com/NurraLLC/quran-reader</a>.</li>
           </ul>
         </section>

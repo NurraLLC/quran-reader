@@ -209,6 +209,16 @@ test.describe('the start page example', () => {
   });
 });
 
+test('About credits each source and promises nothing the reader does not do', async ({ page }) => {
+  await page.goto('/about');
+  const how = page.locator('section', { has: page.getByRole('heading', { name: 'How it works' }) });
+  await expect(how).toContainText('Arabic font: KFGQPC HAFS Uthmanic Script, by the King Fahd Glorious Quran Printing Complex');
+  await expect(how).toContainText('English translation: Saheeh International (Dar Abul-Qasim)');
+  await expect(how).toContainText('it doesn’t grade recitation or mark mistakes');
+  await expect(how).not.toContainText('display font are provided through Quran Foundation');
+  await expect(page.locator('.about-page')).not.toContainText('checking their hifz');
+});
+
 test.describe('keyboard', () => {
   test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
 
