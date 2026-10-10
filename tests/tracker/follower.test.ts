@@ -100,15 +100,49 @@ describe('follower modes', () => {
     expect(recs.every((e) => e.kind === 'decision' && e.record.outcome !== 'accepted')).toBe(true);
   });
 
-  it('a stop/new capture epoch defeats results bound to the old epoch', async () => {
-    const clock = new VirtualClock();
-    const client = new SimulatedDecisionClient(400, (ms, s) => clock.wait(ms, s));
-    const h = harness('jev_required', client, clock);
-    await h.play(recite(['36:1-36:3']), 3000);
-    h.f.newCapture(2);
-    await clock.advance(1000);
-    expect(h.commits()).toHaveLength(0);
-  });
+  it.each(['stop', 'new capture', 'mode change', 'manual seek', 'unlocate', 'provider removal'])(
+    '%s defeats a real in-flight decision even when the provider ignores cancellation', async (change) => {
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      let signal!: AbortSignal;
+      const answer = new SimulatedDecisionClient(0, async () => undefined);
+      const client: DecisionClient = {
+        gateway: answer.gateway,
+        async evaluate(state, questions, options) {
+          signal = options.signal!;
+          await gate;
+          // Return a confident answer even though the old request was aborted.
+          return answer.evaluate(state, questions, {});
+        },
+      };
+      const h = harness('jev_required', client);
+      h.f.newCapture(1);
+      const buffer = new TranscriptBuffer();
+      buffer.apply([{ text: h.corpus.verse('67:1')!.searchText + ' ', isFinal: true }]);
+      h.f.onTranscript(buffer.evidence(), '', true);
+      await h.clock.advance(101);
+      expect(h.f.stats?.started).toBe(1);
+      expect(signal.aborted).toBe(false); // prove the cancellation window was actually reached
+      const manual = h.corpus.verse('112:1')!.index;
+      try {
+        if (change === 'stop') h.f.stop();
+        else if (change === 'new capture') h.f.newCapture(2);
+        else if (change === 'mode change') h.f.setMode('deterministic');
+        else if (change === 'manual seek') h.f.seek(manual);
+        else if (change === 'unlocate') h.f.unlocate();
+        else h.f.setClient(null);
+        expect(signal.aborted).toBe(true);
+        release();
+        await h.clock.advance(1000);
+        expect(answer.calls).toBe(1); // the uncooperative provider really returned
+        expect(h.commits()).toEqual([]);
+        expect(h.f.currentVerse).toBe(change === 'manual seek' ? manual : null);
+      } finally {
+        release();
+        h.f.stop();
+      }
+    },
+  );
 
   it('a decision can never resolve identical-text collisions (regression: "الحمد لله" at 18:1 chose 1:2)', async () => {
     const clock = new VirtualClock();

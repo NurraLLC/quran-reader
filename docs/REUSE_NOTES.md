@@ -1,5 +1,15 @@
 # Reuse notes: what came from Moard and Nur, and how it is verified here
 
+2026-10-10 lifecycle audit: reread current Moard `harbor/actions/contextual_ranking.py` and its
+tests, and `harbor/intelligence/openrouter_jev.py`'s cancellation checks before and after transport.
+Applied the required motion/latency, surface-quality, cross-runtime-integrity and learning-loop
+guidance to the Quran-specific seams. The overlay scheduler now keeps the first coalescing deadline
+while replacing pending evidence; search owns pre/post-retrieval cancellation and removes its abort
+listener; browser callbacks belong only to the current live socket. Regressions are in
+`tests/tracker/{scheduler,follower}.test.ts`, `tests/search/cancellation.test.ts` and
+`tests/session/net.test.ts`. [The audit](AUDIT_2026-10-10.md) records observed failures and proof limits.
+No Moard/Nur source, credentials, private recordings or processes were modified or imported.
+
 Route followed: [`outputs/MOARD_REUSE_GUIDE.md`](../outputs/MOARD_REUSE_GUIDE.md). Moard (`C:\VibeBerry 97`) and Nur (`C:\Nur`) were read only; nothing was copied as a runtime dependency, no credentials or recordings were read, and no process was touched.
 
 Sources read on 2026-09-28. Moard is an active checkout: HEAD was `bebab2bf73bc…` when read (the plan recorded `50d66816…`; it later showed `65df59b5…`). Nur backend HEAD `ba81f7985b75…`. Files: Moard `harbor/intelligence/{soniox_stream,openrouter_jev,jev,jev_turn,openrouter_http,contextual_rank_provider}.py` and tests, `harbor/actions/contextual_ranking.py` and test, skills `moard-motion-and-latency`, `moard-surface-quality`, `moard-cross-runtime-integrity`, `moard-agent-learning-loop` (`.claude/skills` mirror); Nur `app/ai/jev_{contracts,client,tasks,gateway,pricing}.py`. The command owners (`command_admission.py` etc.) were not needed: this app's action set is only navigation/search.

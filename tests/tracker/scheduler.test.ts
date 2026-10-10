@@ -13,6 +13,31 @@ function setup(run: (p: string, signal: AbortSignal) => Promise<string>) {
 }
 
 describe('decision scheduler', () => {
+  it('starts within the coalescing window even while new evidence keeps arriving', async () => {
+    const calls: Array<{ packet: string; at: number }> = [];
+    const { clock, s } = setup(async (packet) => {
+      calls.push({ packet, at: clock.now() });
+      return packet;
+    });
+    s.submit({ fingerprint: 'a', packet: 'a' });
+    await clock.advance(40);
+    s.submit({ fingerprint: 'b', packet: 'b' });
+    await clock.advance(40);
+    s.submit({ fingerprint: 'c', packet: 'c' });
+    await clock.advance(20);
+    expect(calls).toEqual([{ packet: 'c', at: 100 }]);
+
+    // New evidence replaces the pending job without extending the minimum interval either.
+    s.submit({ fingerprint: 'd', packet: 'd' });
+    await clock.advance(50);
+    s.submit({ fingerprint: 'e', packet: 'e' });
+    await clock.advance(50);
+    s.submit({ fingerprint: 'f', packet: 'f' });
+    await clock.advance(150);
+    expect(calls).toEqual([{ packet: 'c', at: 100 }, { packet: 'f', at: 350 }]);
+    s.cancelAll();
+  });
+
   it('a blocked provider never blocks submitters, and identical requests are single-flight', async () => {
     let calls = 0;
     let release!: () => void;

@@ -21,6 +21,10 @@ const SEMANTIC_K = 30;
 const TO_JEV = 24;
 const CARDS = 5;
 
+function ensureActive(signal?: AbortSignal) {
+  if (signal?.aborted) throw Object.assign(new Error('CANCELLED'), { code: 'CANCELLED' });
+}
+
 export type SearchTrace = {
   lexical: number[];
   semantic: number[];
@@ -57,17 +61,18 @@ export class CommandResolver {
    * calls took ~0.3 s; reproduced with curl.) Never used in the recitation loop.
    */
   private async evaluateHedged(state: unknown, questions: Record<string, Question>, signal?: AbortSignal): Promise<Decision> {
+    ensureActive(signal);
     const client = this.client!;
     const deadline = performance.now() + SEARCH_DEADLINE_MS;
     const ctrls: AbortController[] = [];
     const attempt = () => {
       const c = new AbortController();
       ctrls.push(c);
-      signal?.addEventListener('abort', () => c.abort(), { once: true });
       return client.evaluate(state, questions, { timeoutMs: Math.max(50, deadline - performance.now()), signal: c.signal });
     };
     let hedge: ReturnType<typeof setTimeout> | undefined;
     let expire: ReturnType<typeof setTimeout> | undefined;
+    let cancel: (() => void) | undefined;
     try {
       return await new Promise<Decision>((resolve, reject) => {
         let pending = 1;
@@ -77,6 +82,11 @@ export class CommandResolver {
           done = true;
           fn();
         };
+        cancel = () => {
+          finish(() => reject(Object.assign(new Error('CANCELLED'), { code: 'CANCELLED' })));
+          for (const c of ctrls) c.abort();
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
         const settle = (p: Promise<Decision>) =>
           p.then(
             (d) => finish(() => resolve(d)),
@@ -98,9 +108,9 @@ export class CommandResolver {
         }, HEDGE_MS);
         // The whole exchange is bounded here, whatever an individual client does with its timeout.
         expire = setTimeout(() => finish(() => reject(Object.assign(new Error('TIMEOUT'), { code: 'TIMEOUT' }))), Math.max(0, deadline - performance.now()));
-        signal?.addEventListener('abort', () => finish(() => reject(Object.assign(new Error('CANCELLED'), { code: 'CANCELLED' }))), { once: true });
       });
     } finally {
+      if (cancel) signal?.removeEventListener('abort', cancel);
       clearTimeout(hedge);
       clearTimeout(expire);
       for (const c of ctrls) c.abort();
@@ -125,6 +135,7 @@ export class CommandResolver {
   }
 
   async resolve(text: string, currentIndex: number | null, signal?: AbortSignal, onPreliminary?: (r: CommandResult) => void): Promise<CommandResult> {
+    ensureActive(signal);
     const current = currentIndex !== null ? this.corpus.at(currentIndex)! : null;
     const intent = this.parse(text, current?.surah ?? null);
     switch (intent.kind) {
@@ -217,12 +228,14 @@ export class CommandResolver {
         const actions = intent.options.map((o, i) => ({ id: `a${i}`, label: `Go to Surah ${o.name}`, description: `Show ${keys[i]}` }));
         const { state, questions } = buildCommandChoice(text, currentKey, actions);
         const d = await this.evaluateHedged(state, questions, signal);
+        ensureActive(signal);
         const a = d.answers.action;
         if (a?.type === 'choice' && !a.tied && a.choice !== NO_ACTION && (a.probabilities[a.choice] ?? 0) >= 0.9) {
           confirmedKey = keys[Number(a.choice.slice(1))] ?? null;
           status = 'JEV suggested one surah; confirm before showing.';
         }
       } catch {
+        ensureActive(signal);
         status = 'Several surah names match; JEV unavailable. Choose one.';
       }
     }
@@ -231,6 +244,7 @@ export class CommandResolver {
   }
 
   async search(query: string, signal?: AbortSignal, onPreliminary?: (r: CommandResult) => void): Promise<CommandResult> {
+    ensureActive(signal);
     const lexical = this.bm25.search(query, LEXICAL_K);
     let semantic: Array<{ verseIndex: number }> = [];
     if (this.semantic?.ready) {
@@ -240,6 +254,7 @@ export class CommandResolver {
         semantic = [];
       }
     }
+    ensureActive(signal); // semantic retrieval may have yielded to a newer request or manual seek
     // Each retriever's best hit stays visible (an exact-wording match must not be out-voted by
     // passages both retrievers rank moderately); the rest follows reciprocal rank fusion.
     // Source-owned concepts: QUL topic names → their verse links (a third evidence channel).
@@ -288,6 +303,7 @@ export class CommandResolver {
         const passages = order.map((i) => ({ key: this.corpus.at(i)!.key, english: this.corpus.at(i)!.english }));
         const { state, questions, kept } = buildSearchChoice(this.client.gateway, query, passages);
         const d = await this.evaluateHedged(state, questions, signal);
+        ensureActive(signal);
         const pick = d.answers.passage;
         const rel = d.answers.relevant;
         trace.jev = { outcome: 'answered', latencyMs: Math.round(performance.now() - t0), choice: pick?.type === 'choice' ? pick.choice : null };
@@ -310,6 +326,7 @@ export class CommandResolver {
           }
         }
       } catch (e) {
+        ensureActive(signal);
         trace.jev = { outcome: (e as { code?: string }).code ?? 'error', latencyMs: Math.round(performance.now() - t0), choice: null };
         status = `JEV unavailable (${trace.jev.outcome}); ${status}`;
       }

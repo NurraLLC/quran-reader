@@ -48,26 +48,33 @@ export function connect(
   let timer: ReturnType<typeof setTimeout> | null = null;
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${path}`;
   const send = (m: unknown) => {
-    if (ws?.readyState !== WebSocket.OPEN) return false;
+    if (closed || ws?.readyState !== WebSocket.OPEN) return false;
     ws.send(JSON.stringify(m));
     return true;
   };
   const open = () => {
+    if (closed) return;
     handlers.onStatus?.('connecting');
-    ws = new WebSocket(url);
-    ws.onopen = () => {
+    const socket = new WebSocket(url);
+    ws = socket;
+    const current = () => !closed && ws === socket;
+    socket.onopen = () => {
+      if (!current()) return;
       attempt = 0;
       handlers.onStatus?.('open');
       handlers.onOpen?.(send);
     };
-    ws.onmessage = (ev) => {
+    socket.onmessage = (ev) => {
+      if (!current()) return;
       try {
         handlers.onMessage(JSON.parse(String(ev.data)));
       } catch {
         /* malformed frame ignored */
       }
     };
-    ws.onclose = (ev) => {
+    socket.onclose = (ev) => {
+      if (!current()) return;
+      ws = null;
       handlers.onStatus?.('closed', ev.code);
       if (closed || (handlers.shouldRetry && !handlers.shouldRetry(ev.code))) return;
       const delay = Math.min(5000, 250 * 2 ** attempt++);
@@ -78,9 +85,13 @@ export function connect(
   return {
     send,
     close() {
+      if (closed) return;
       closed = true;
       if (timer) clearTimeout(timer);
-      ws?.close();
+      timer = null;
+      const socket = ws;
+      ws = null;
+      socket?.close();
     },
   };
 }

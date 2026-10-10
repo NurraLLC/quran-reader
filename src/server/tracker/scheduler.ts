@@ -113,10 +113,11 @@ export class DecisionScheduler<P, R> {
   }
 
   private schedule(delay: number) {
-    if (this.inflight) return; // started after completion
+    // Replacing the pending evidence must not restart its clock: a stream of material changes
+    // still gets a decision within the first coalescing window (or interval/cooldown boundary).
+    if (this.inflight || this.pendingTimer !== null) return; // started after completion
     const now = this.clock.now();
     const at = Math.max(now + delay, this.lastStart + this.cfg.minIntervalMs, this.cooldownUntil);
-    if (this.pendingTimer !== null) this.clock.clearTimeout(this.pendingTimer);
     this.pendingTimer = this.clock.setTimeout(() => {
       this.pendingTimer = null;
       this.start();
