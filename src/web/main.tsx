@@ -8,6 +8,10 @@ import './styles/app.css';
 import { BASE } from './net';
 
 const path = (location.pathname.startsWith(BASE) ? location.pathname.slice(BASE.length) : location.pathname).replace(/\/+$/, '');
+// Surface styles must apply to the first React frame, including "Opening…". Setting this only in
+// the page's passive effect let its content paint on a white page in the browser's default font.
+document.documentElement.dataset.surface = ['/overlay', '/read', '/stream'].includes(path) ? 'overlay'
+  : ['/reader', '/about', ''].includes(path) ? 'reader' : 'control';
 const root = createRoot(document.getElementById('root')!);
 if (path === '/overlay' || path === '/read') root.render(<Overlay />);
 // The charity stream scene for OBS: the reader in a panel, with the donations around it. Loaded on its
