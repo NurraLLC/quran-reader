@@ -15,6 +15,7 @@ import { ReaderAppearance, useReaderAppearance } from './ReaderAppearance';
 import { audioRoute, transcriptUse, SILENCE_CONTROL, REQUEST_PRIVACY } from './privacy-copy';
 import { FollowDemo } from './FollowDemo';
 import { keepMeaningsInside } from './gloss';
+import { onReaderChoiceKey, readerHandReadingKey } from './reader-choice';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -462,11 +463,7 @@ export function Reader() {
     };
     // Keyboard scrolling (and moving through the passage with the arrow keys) is reading by hand too.
     const onKey = (e: KeyboardEvent) => {
-      if (!['PageDown', 'PageUp', 'ArrowDown', 'ArrowUp', 'Home', 'End', ' '].includes(e.key)) return;
-      const target = e.target as HTMLElement | null;
-      if (target?.closest('input, textarea, select, [contenteditable="true"], dialog')) return;
-      if (e.key === ' ' && target?.closest('button, a')) return;
-      byHand();
+      if (readerHandReadingKey(e)) byHand();
     };
     window.addEventListener('wheel', byHand, { passive: true });
     window.addEventListener('touchmove', byHand, { passive: true });
@@ -667,9 +664,9 @@ export function Reader() {
             <span className="r-name">Quran Reader</span>
           )}
         </div>
-        <div className="r-langs" role="radiogroup" aria-label="Language">
+        <div className="r-langs" role="radiogroup" aria-label="Language" onKeyDown={onReaderChoiceKey}>
           {([['arabic', 'عربي'], ['both', 'Both'], ['english', 'English']] as const).map(([v, label]) => (
-            <button key={v} role="radio" aria-checked={lang === v} className={lang === v ? 'on' : ''} lang={v === 'arabic' ? 'ar' : 'en'} onClick={() => chooseLanguage(v)}>
+            <button key={v} role="radio" aria-checked={lang === v} tabIndex={lang === v ? 0 : -1} className={lang === v ? 'on' : ''} lang={v === 'arabic' ? 'ar' : 'en'} onClick={() => chooseLanguage(v)}>
               {label}
             </button>
           ))}

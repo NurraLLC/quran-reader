@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { onReaderChoiceKey } from './reader-choice';
 
 type Appearance = { theme: 'night' | 'paper'; scale: number };
 const DEFAULT: Appearance = { theme: 'night', scale: 1 };
@@ -44,9 +45,9 @@ export function ReaderAppearance({ appearance, onChange, onClose }: {
         <button className="r-close" autoFocus onClick={onClose} aria-label="Close reading appearance">×</button>
         <h2 id="reading-appearance-title">Your reading page</h2>
         <p className="hint">Saved on this device. Your stream keeps its own look.</p>
-        <div className="r-reading-themes" role="radiogroup" aria-label="Reading theme">
+        <div className="r-reading-themes" role="radiogroup" aria-label="Reading theme" onKeyDown={onReaderChoiceKey}>
           {(['night', 'paper'] as const).map((theme) => (
-            <button key={theme} className={`r-theme-choice r-theme-${theme}`} role="radio" aria-checked={appearance.theme === theme} onClick={() => onChange({ ...appearance, theme })}>
+            <button key={theme} className={`r-theme-choice r-theme-${theme}`} role="radio" aria-checked={appearance.theme === theme} tabIndex={appearance.theme === theme ? 0 : -1} onClick={() => onChange({ ...appearance, theme })}>
               <span className="r-theme-sample" aria-hidden="true"><i /><i /><i /></span>
               <strong>{theme === 'night' ? 'Night' : 'Paper'}</strong>
               <span>{theme === 'night' ? 'Quiet ink and gold' : 'Warm page, dark lettering'}</span>
