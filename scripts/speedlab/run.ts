@@ -4,9 +4,11 @@
 // clock and reports, per ayah, "ayah starts in the audio -> on screen", plus wrong and missed ayahs.
 // Real network, real Soniox, TTS voice (not a human reciter). Needs SONIOX_API_KEY in .env.
 import { spawn, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { chromium } from '@playwright/test';
+import { assertPortFree } from './port';
 
 const arg = (n: string, d: string) => {
   const i = process.argv.indexOf(`--${n}`);
@@ -25,11 +27,9 @@ const truth = JSON.parse(readFileSync(path.join('data', 'speedlab', `${name}.jso
 };
 
 // A server left on the port (e.g. from an interrupted run) would silently serve stale code.
-const inUse = await fetch(`http://127.0.0.1:${port}/api/owner/status`).then(() => true, () => false);
-if (inUse) throw new Error(`port ${port} is already serving; stop that process first`);
+await assertPortFree(port);
 
-const server = spawn('npx', ['tsx', 'src/server/main.ts', '--capture'], {
-  shell: true,
+const server = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'src/server/main.ts', '--capture'], {
   env: { ...process.env, PORT: String(port), QO_OWNER_TOKEN: owner, TRACKER_MODE: mode },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -45,11 +45,12 @@ for (let i = 0; i < 100; i++) {
   await new Promise((r) => setTimeout(r, 200));
 }
 
-const browser = await chromium.launch({
-  channel: 'msedge',
-  args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}%noloop`],
-});
+let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
 try {
+  browser = await chromium.launch({
+    channel: 'msedge',
+    args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-audio-capture=${wav}%noloop`],
+  });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(`${base}/control${stt ? `?stt=${encodeURIComponent(stt)}` : ''}#owner=${owner}`);
   await page.waitForSelector('.topbar');
@@ -71,6 +72,10 @@ try {
     tick();
   })()`);
   await page.getByRole('button', { name: 'Start listening' }).click();
+  // The input is the explicitly selected, existing lab WAV, not a person's live microphone.
+  const consent = page.getByRole('dialog', { name: 'Before you turn on the microphone' });
+  await consent.getByRole('checkbox').check();
+  await consent.getByRole('button', { name: 'Agree and continue' }).click();
   await page.waitForFunction(() => (window as unknown as { __qoAudioOrigin?: () => number | null }).__qoAudioOrigin?.() != null, undefined, { timeout: 20000 });
   const frames = arg('frames', '');
   if (frames) {
@@ -112,6 +117,7 @@ try {
       .then(() => true, () => false);
     const note = await page.locator('.voice-card .hint').first().innerText().catch(() => '');
     console.log(`idle check: ${stopped ? `stopped by itself ${((Date.now() - t0) / 1000).toFixed(0)} s after the audio ended (+2.5 s)` : 'STILL LISTENING after 80 s'} — "${note.slice(0, 90)}"`);
+    if (!stopped) process.exitCode = 1;
   }
   await page.getByRole('button', { name: 'Stop listening' }).click().catch(() => undefined);
 
@@ -120,21 +126,31 @@ try {
   const rows: string[] = [];
   const lat: number[] = [];
   let wrong = 0;
+  let late = 0;
   for (const c of changes) {
     if (!c.key) continue;
     const seg = truth.segments.find((s) => s.key === c.key);
     const current = truth.segments.filter((s) => s.startMs <= c.audio).at(-1);
-    const ok = !!seg && seg.startMs <= c.audio + 50 && (current?.key === c.key || truth.segments.indexOf(current!) - truth.segments.indexOf(seg) <= 1);
-    if (!ok) wrong++;
+    const wrongVerse = !seg || seg.startMs > c.audio + 50;
+    const stale = !wrongVerse && !!current && truth.segments.indexOf(current) - truth.segments.indexOf(seg!) > 1;
+    if (wrongVerse) wrong++;
+    if (stale) late++;
     if (seg) lat.push(c.audio - seg.startMs);
-    rows.push(`  ${c.key.padEnd(7)} on screen ${(c.audio / 1000).toFixed(2).padStart(6)} s audio | ayah began ${seg ? (seg.startMs / 1000).toFixed(2) : '—'} s | ${seg ? `+${((c.audio - seg.startMs) / 1000).toFixed(2)} s after ayah start` : ''}${ok ? '' : '  WRONG'}`);
+    rows.push(`  ${c.key.padEnd(7)} on screen ${(c.audio / 1000).toFixed(2).padStart(6)} s audio | ayah began ${seg ? (seg.startMs / 1000).toFixed(2) : '—'} s | ${seg ? `+${((c.audio - seg.startMs) / 1000).toFixed(2)} s after ayah start` : ''}${wrongVerse ? '  WRONG VERSE' : stale ? '  LATE (more than one ayah behind)' : ''}`);
   }
   const shown = new Set(changes.map((c) => c.key));
   const missed = truth.segments.filter((s) => !shown.has(s.key)).map((s) => s.key);
   const s = [...lat].sort((a, b) => a - b);
   const q = (p: number) => (s.length ? (s[Math.min(s.length - 1, Math.floor(s.length * p))] / 1000).toFixed(2) : '—');
   console.log(rows.join('\n'));
-  console.log(`\n${name} (${mode}, ${label}): ${truth.segments.length} ayahs, shown ${truth.segments.length - missed.length}, missed ${missed.length}${missed.length ? ` (${missed.join(' ')})` : ''}, wrong ${wrong}`);
+  console.log(`\n${name} (${mode}, ${label}): ${truth.segments.length} ayahs, shown ${truth.segments.length - missed.length}, missed ${missed.length}${missed.length ? ` (${missed.join(' ')})` : ''}, wrong ${wrong}, late ${late}`);
+  const reportDir = path.resolve('artifacts/speedlab');
+  mkdirSync(reportDir, { recursive: true });
+  const reportFile = path.join(reportDir, `run-${Date.now()}.json`);
+  writeFileSync(reportFile, JSON.stringify({ kind: 'Live Soniox with existing injected TTS WAV; not a physical microphone or human-reciter accuracy test', name, mode, label, wavSha256: createHash('sha256').update(readFileSync(wav)).digest('hex'), changes, truth: truth.segments, missed, wrong, late, onsetToPaintMs: lat }, null, 2));
+  console.log(`Evidence: ${reportFile}`);
+  // A measured failure remains a failure; cleanup must never turn it into exit 0.
+  if (wrong || late || missed.length) process.exitCode = 1;
   console.log(`ayah starts in audio -> on screen: p50 ${q(0.5)} s, p90 ${q(0.9)} s, best ${q(0)} s`);
   console.log(`control-page meter: ${meter}`);
   // Anticipation: the next-ayah preview brightened (last word reached) before the ayah changed.
@@ -147,8 +163,8 @@ try {
   const ls = [...leads].sort((a, b) => a - b);
   console.log(`next-ayah preview brightened before ${leads.length} of ${Math.max(0, log.filter((l) => l.key).length - 1)} changes${ls.length ? `, lead p50 ${(ls[Math.floor(ls.length / 2)] / 1000).toFixed(2)} s` : ''}`);
 } finally {
-  await browser.close();
-  if (process.platform === 'win32' && server.pid) spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f']);
-  else server.kill();
-  process.exit(0);
+  try { await browser?.close(); } finally {
+    if (process.platform === 'win32' && server.pid) spawnSync('taskkill', ['/pid', String(server.pid), '/t', '/f'], { stdio: 'ignore' });
+    else server.kill();
+  }
 }
