@@ -23,4 +23,6 @@ the browser response cache.
 
 Typecheck and 26 focused cookie, connection, hosted-session and private-owner tests
 passed. These are code checks, not owner-browser, microphone or OBS acceptance.
-Publication details are recorded in [LAUNCH_STATUS.md](LAUNCH_STATUS.md).
+Release `2fd1064` passed GitHub CI and private Linux startup and was published on
+October 24. [LAUNCH_STATUS.md](LAUNCH_STATUS.md) records the production revision
+and rollback container. No further interactive browser testing was performed.

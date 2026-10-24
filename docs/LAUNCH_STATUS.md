@@ -1,6 +1,31 @@
-# Launch status — 2026-10-23
+# Launch status — 2026-10-24
 
-## Current update: paired word meanings and evidence-based tracking
+## Current update: public reader access recovery
+
+The public reader now runs `quran-reader:2fd1064`, revision
+`2fd106494c8266e0fee2cbb045c1109693752db5`, image
+`sha256:76279b8e0ac0b3634bbbe555a8885d3ff7e366538b3735f8b512b269ce3b089f`.
+It fixes the duplicate visitor-cookie failure path and gives hosted reader
+connections one bounded session-renewal attempt instead of the private-link gate.
+See [PUBLIC_ACCESS_REPAIR.md](PUBLIC_ACCESS_REPAIR.md).
+
+- [CI passed](https://github.com/NurraLLC/quran-reader/actions/runs/40068156161),
+  as did typecheck and 26 focused cookie, connection and hosted/private-access tests.
+- The Linux live image passed private startup using temporary state and the
+  existing content cache read-only. All 114 chapters and 6,236 ayahs were present.
+- The release initially waited for one active recitation. The owner authorized
+  publication with a brief interruption; the session finished before the actual
+  switch, whose final guard saw zero open holds.
+- The existing content/state volumes and production environment were retained.
+  Private backups were made, pre/post pool totals matched, and the content-refresh
+  timer remains active. Public health and the updated frontend are available.
+- Rollback container: `quran-reader-old-adb0cea-20261024T060331Z` (UTC suffix).
+
+The owner requested no further interaction with their browser. No additional
+interactive browser, microphone, provider or OBS acceptance was performed after
+the repair. The specific failing owner-browser cookie state was not instrumented.
+
+## Previous update: paired word meanings and evidence-based tracking
 
 The owner requested publication on October 23. The public reader at
 https://nurra.org/quran-reader/ now runs `quran-reader:adb0cea`, revision
