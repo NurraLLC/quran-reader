@@ -10,6 +10,7 @@ import { fullCorpus } from '../helpers';
 import { CreditStore } from '../../src/server/billing/credits';
 import { SessionHub } from '../../src/server/billing/hub';
 import { VisitorIdentity } from '../../src/server/billing/identity';
+import { WebSocket } from 'ws';
 
 describe('base path helpers', () => {
   it('normalizes and strips', () => {
@@ -87,6 +88,22 @@ describe('the visitor cookie under a base path', () => {
       const set = again.headers.getSetCookie();
       expect(set.find((c) => c.includes('Path=/quran-reader'))).toMatch(new RegExp(`^${cookie.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')};`));
       expect(set.find((c) => /Path=\/;/.test(c))).toMatch(/^qo_visitor=;.*Max-Age=0/);
+      // A browser can send an old domain-scoped copy before the current app-scoped cookie.
+      // Keep the verified identity when migrating, and use it for the control socket too.
+      for (const old of ['expired.invalid', '%E0%A4%A']) {
+        const duplicates = `qo_visitor=${old}; ${cookie}; qo_visitor=another.invalid`;
+        const headers = { origin: `http://127.0.0.1:${port}`, cookie: duplicates };
+        const returning = await fetch(`http://127.0.0.1:${port}/quran-reader/api/me`, { headers });
+        expect(returning.headers.getSetCookie().find(c => c.includes('Path=/quran-reader'))?.split(';')[0]).toBe(cookie);
+        expect(await (await fetch(`http://127.0.0.1:${port}/quran-reader/api/owner/status`, { headers })).json()).toEqual({ owner: true });
+        await new Promise<void>((resolve, reject) => {
+          const ws = new WebSocket(`ws://127.0.0.1:${port}/quran-reader/ws/control`, { headers });
+          const timer = setTimeout(() => { ws.terminate(); reject(Error('Visitor control connection timed out')); }, 3000);
+          ws.once('message', raw => { clearTimeout(timer); ws.close(); expect(JSON.parse(raw.toString()).type).toBe('snapshot'); resolve(); });
+          ws.once('close', code => { clearTimeout(timer); if (code === 4401) reject(Error('Valid visitor cookie was masked')); });
+          ws.once('error', err => { clearTimeout(timer); reject(err); });
+        });
+      }
     } finally {
       await app.close();
       await new Promise((res) => setTimeout(res, 100));

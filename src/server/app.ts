@@ -104,15 +104,17 @@ function safeEqual(a: string, b: string) {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
-function readCookie(req: FastifyRequest, name: string): string | null {
+function readCookies(req: FastifyRequest, name: string): string[] {
   const raw = req.headers.cookie;
-  if (!raw) return null;
+  if (!raw) return [];
+  const values: string[] = [];
   for (const part of raw.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) { try { return decodeURIComponent(v.join('=')); } catch { return null; } }
+    if (k === name) { try { values.push(decodeURIComponent(v.join('='))); } catch { /* Ignore a malformed older cookie. */ } }
   }
-  return null;
+  return values;
 }
+const readCookie = (req: FastifyRequest, name: string) => readCookies(req, name)[0] ?? null;
 
 class RateLimit {
   private hits: number[] = [];
@@ -237,8 +239,13 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const c = readCookie(req, COOKIE);
     return !!c && safeEqual(c, ownerCookie);
   };
-  /** Hosted: the visitor id from the signed cookie. */
-  const visitor = (req: FastifyRequest) => (hosted ? hosted.identity.verify(readCookie(req, VISITOR_COOKIE)) : null);
+  // Browsers can retain the same cookie name at different domain/path scopes. An expired
+  // copy must not mask the valid signed identity or get written back during path migration.
+  const visitorCookieValue = (req: FastifyRequest) => hosted
+    ? readCookies(req, VISITOR_COOKIE).find((value) => hosted.identity.verify(value) !== null) ?? null
+    : null;
+  /** Hosted: only a verified signed cookie can control the visitor's session. */
+  const visitor = (req: FastifyRequest) => (hosted ? hosted.identity.verify(visitorCookieValue(req)) : null);
   /** The session this request controls, if any (local: the owner's; hosted: the visitor's own). */
   const sessionFor = (req: FastifyRequest): Session | null => {
     if (!hosted) return isOwner(req) ? local : null;
@@ -315,7 +322,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       // Cookies issued before the path was scoped went to all of the parent site (Path=/). The same
       // identity moves under the app's path and the site-wide copy is expired, so a returning
       // visitor keeps their place and listening share while the rest of the site stops receiving it.
-      reply.header('Set-Cookie', [visitorCookie(readCookie(req, VISITOR_COOKIE)!), `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureCookie ? '; Secure' : ''}`]);
+      reply.header('Set-Cookie', [visitorCookie(visitorCookieValue(req)!), `${VISITOR_COOKIE}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${secureCookie ? '; Secure' : ''}`]);
     }
     lastIp.set(id, clientIp(req));
     return {

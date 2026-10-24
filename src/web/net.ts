@@ -40,11 +40,15 @@ export function connect(
     onStatus?: (s: 'connecting' | 'open' | 'closed', code?: number) => void;
     /** Return false to stop reconnecting after a close code (e.g. auth failure). */
     shouldRetry?: (code: number) => boolean;
+    /** Hosted control pages can renew a lost anonymous cookie once before retrying authentication. */
+    recoverAuth?: () => Promise<boolean>;
   },
 ): Socket {
   let ws: WebSocket | null = null;
   let closed = false;
   let attempt = 0;
+  let authRecovered = false;
+  let generation = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}${path}`;
   const send = (m: unknown) => {
@@ -54,6 +58,7 @@ export function connect(
   };
   const open = () => {
     if (closed) return;
+    const ownGeneration = ++generation;
     handlers.onStatus?.('connecting');
     const socket = new WebSocket(url);
     ws = socket;
@@ -75,6 +80,19 @@ export function connect(
     socket.onclose = (ev) => {
       if (!current()) return;
       ws = null;
+      if (ev.code === 4401 && handlers.recoverAuth && !authRecovered) {
+        authRecovered = true;
+        handlers.onStatus?.('connecting');
+        // Renew only once, never weaken socket authentication or loop through new identities.
+        Promise.resolve().then(() => closed || ownGeneration !== generation ? false : handlers.recoverAuth!()).then((recovered) => {
+          if (closed || ownGeneration !== generation) return;
+          if (recovered) timer = setTimeout(open, 250);
+          else handlers.onStatus?.('closed', 4401);
+        }).catch(() => {
+          if (!closed && ownGeneration === generation) handlers.onStatus?.('closed', 4401);
+        });
+        return;
+      }
       handlers.onStatus?.('closed', ev.code);
       if (closed || (handlers.shouldRetry && !handlers.shouldRetry(ev.code))) return;
       const delay = Math.min(5000, 250 * 2 ** attempt++);
@@ -87,6 +105,7 @@ export function connect(
     close() {
       if (closed) return;
       closed = true;
+      generation++;
       if (timer) clearTimeout(timer);
       timer = null;
       const socket = ws;
@@ -135,7 +154,7 @@ export type Access = {
 /** Local: trade the owner link for the cookie. Hosted: get (or be issued) this visitor's identity. */
 export async function access(): Promise<Access> {
   await exchangeOwner();
-  const r = await fetch(u('/api/me'), { credentials: 'same-origin' });
+  const r = await fetch(u('/api/me'), { credentials: 'same-origin', cache: 'no-store' });
   if (!r.ok) throw new Error('Reader unavailable');
   return (await r.json()) as Access;
 }

@@ -25,6 +25,49 @@ beforeEach(() => {
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('reconnecting socket ownership', () => {
+  it('renews a hosted visitor once before retrying a refused control connection', async () => {
+    const recoverAuth = vi.fn(async () => true);
+    const onStatus = vi.fn();
+    const connection = connect('/ws/control', { onMessage: vi.fn(), onStatus, recoverAuth, shouldRetry: code => code !== 4401 });
+    TestSocket.instances[0].end(4401);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(recoverAuth).toHaveBeenCalledTimes(1);
+    expect(onStatus).not.toHaveBeenCalledWith('closed', 4401);
+    expect(TestSocket.instances).toHaveLength(2);
+    TestSocket.instances[1].end(4401);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onStatus).toHaveBeenCalledWith('closed', 4401);
+    expect(recoverAuth).toHaveBeenCalledTimes(1);
+    expect(TestSocket.instances).toHaveLength(2);
+    connection.close();
+  });
+
+  it('does not reconnect or deliver a late recovery result after the page closes', async () => {
+    let finish!: (recovered: boolean) => void;
+    const recoverAuth = vi.fn(() => new Promise<boolean>(resolve => { finish = resolve; }));
+    const onStatus = vi.fn();
+    const connection = connect('/ws/control', { onMessage: vi.fn(), onStatus, recoverAuth });
+    TestSocket.instances[0].end(4401);
+    await vi.advanceTimersByTimeAsync(0);
+    connection.close();
+    onStatus.mockClear();
+    finish(true);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(TestSocket.instances).toHaveLength(1);
+    expect(onStatus).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('stops after failed session renewal instead of retrying without authority', async () => {
+    const onStatus = vi.fn();
+    const connection = connect('/ws/control', { onMessage: vi.fn(), onStatus, recoverAuth: async () => false });
+    TestSocket.instances[0].end(4401);
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(onStatus).toHaveBeenCalledWith('closed', 4401);
+    expect(TestSocket.instances).toHaveLength(1);
+    connection.close();
+  });
+
   it('does not deliver late callbacks after the page closes its connection', () => {
     const onOpen = vi.fn();
     const onMessage = vi.fn();

@@ -178,19 +178,26 @@ export function Reader() {
     access()
       .then((s) => {
         if (cancelled) return;
-        if (!s.owner) return setAuth('unauthorized');
         setMode(s.mode);
+        if (!s.owner) return setAuth(s.mode === 'hosted' ? 'unavailable' : 'unauthorized');
         if (s.credits) setCredits(s.credits);
         setFunding({ billing: s.billing, sponsored: s.sponsored });
         if (new URLSearchParams(location.search).has('donated') || new URLSearchParams(location.search).has('canceled')) history.replaceState(null, '', location.pathname);
         setAuth('owner');
         sock.current = connect(u('/ws/control'), {
+          recoverAuth: s.mode === 'hosted' ? async () => {
+            const renewed = await access();
+            return renewed.mode === 'hosted' && renewed.owner;
+          } : undefined,
           // A reconnect while listening: the server must hear again that this page's stream is live.
           onOpen: () => capRef.current?.announce(),
           onStatus: (st, code) => {
             setConnection(st);
             if (st === 'closed') setConnectionFailed(true);
-            if (code === 4401) setAuth('unauthorized');
+            if (code === 4401) {
+              capRef.current?.stop();
+              setAuth(s.mode === 'hosted' ? 'unavailable' : 'unauthorized');
+            }
             if (st !== 'open') setPending(false);
           },
           shouldRetry: (code) => code !== 4401,
