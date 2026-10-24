@@ -58,7 +58,13 @@ test.describe('phone', () => {
       for (let i = 0; i < n; i++) {
         await words.nth(i).scrollIntoViewIfNeeded();
         await words.nth(i).click();
-        const box = (await words.nth(i).locator('.r-gloss').boundingBox())!;
+        const meaning = page.locator('.r-ayah.current .word-meaning.is-active');
+        await expect(meaning).toBeInViewport();
+        await expect.poll(async () => {
+          const box = (await meaning.boundingBox())!;
+          return box.x >= 0 && box.x + box.width <= 375;
+        }).toBe(true);
+        const box = (await meaning.boundingBox())!;
         expect(box.x, `${key} word ${i}`).toBeGreaterThanOrEqual(0);
         expect(box.x + box.width, `${key} word ${i}`).toBeLessThanOrEqual(375);
       }
@@ -194,7 +200,7 @@ test.describe('the start page example', () => {
     await expect(page.locator('.r-demo .r-demo-line.current .r-word').first()).toHaveClass(/active/);
     await page.locator('.r-demo .r-demo-line.current .r-word').nth(2).click();
     await expect(page.locator('.r-demo .r-demo-line.current .r-word').nth(2)).toHaveClass(/active/);
-    await expect(page.locator('.r-demo .r-gloss')).toHaveText('the Most Gracious');
+    await expect(page.locator('.r-demo .word-meaning.is-active')).toHaveText('the Most Gracious');
     await page.waitForTimeout(1500);
     await expect(page.locator('.r-demo .r-demo-line.current .r-word').nth(2)).toHaveClass(/active/); // stays paused
   });
@@ -205,9 +211,9 @@ test.describe('the start page example', () => {
     await page.waitForTimeout(3000);
     await expect(page.locator('.r-demo-controls button').first()).toHaveText('Play');
     await expect(page.locator('.r-demo .r-demo-line.current .r-word').first()).toHaveClass(/active/);
-    await expect(page.locator('.r-demo .r-gloss')).toHaveText('In (the) name');
+    await expect(page.locator('.r-demo .word-meaning.is-active')).toHaveText('In (the) name');
     await page.getByRole('button', { name: 'Next word' }).click();
-    await expect(page.locator('.r-demo .r-gloss')).toHaveText('(of) Allah');
+    await expect(page.locator('.r-demo .word-meaning.is-active')).toHaveText('(of) Allah');
   });
 });
 
@@ -241,14 +247,14 @@ test.describe('keyboard', () => {
       if (await page.getByRole('button', { name: 'Type instead' }).evaluate((el) => el === document.activeElement)) break;
     }
     expect(stops + 1).toBeLessThanOrEqual(8);
-    // Back into the passage: its one stop is the current ayah's number.
+    // The passage still has one stop; the English belongs to its Arabic word.
     await page.keyboard.press('Shift+Tab');
     await expect(page.locator('[id="a-2:255"] .r-ayah-follow')).toBeFocused();
     await page.keyboard.press('ArrowRight'); // right to left: the word before the number
     const word = page.locator('[id="a-2:255"] .r-word[role="button"]').last();
     await expect(word).toBeFocused();
-    await expect(word.locator('.r-gloss')).toBeVisible();
-    const meaning = (await word.locator('.r-gloss').textContent())!;
+    await expect(page.locator('.r-ayah.current .word-meaning.is-active')).toBeVisible();
+    const meaning = (await page.locator('.r-ayah.current .word-meaning.is-active').textContent())!;
     await expect(page.locator('.r-sr-only[aria-live]').last()).toHaveText(meaning);
     await page.keyboard.press('ArrowRight');
     await expect(page.locator('[id="a-2:255"] .r-word[role="button"]').nth(-2)).toBeFocused();

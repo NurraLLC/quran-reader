@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fullCorpus } from '../helpers';
+import { fullCorpus, VirtualClock } from '../helpers';
 import { TranscriptBuffer, type Word } from '../../src/shared/transcript';
 import { LiveCursor } from '../../src/server/tracker/live-cursor';
 import { mapDisplayWords } from '../../src/server/corpus/word-map';
@@ -43,9 +43,10 @@ describe('live hypothesis following', () => {
     expect(mapDisplayWords('الله', 'الله الله')).toEqual([null]);
     expect(mapDisplayWords('ريب فيه هدى', 'ريب ۛ فيه ۛ هدى')).toEqual([{ from: 0, to: 0 }, { from: 2, to: 2 }, { from: 4, to: 4 }]);
   });
-  it('publishes partial word changes atomically, freezes on Hold, and ignores results after Stop', () => {
+  it('publishes partial word changes atomically, freezes on Hold, and ignores results after Stop', async () => {
     const { corpus, ix } = fullCorpus();
-    const s = new Session({ corpus, ix, resolver: new CommandResolver(corpus, null, null), decisionClient: null, mode: 'hybrid', setup: { soniox: false, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: () => '' });
+    const clock = new VirtualClock();
+    const s = new Session({ corpus, ix, resolver: new CommandResolver(corpus, null, null), decisionClient: null, mode: 'hybrid', setup: { soniox: false, jev: { provider: null, configured: false, detail: '' }, semantic: () => '' }, overlayUrl: () => '', clock });
     s.handle({ type: 'capture', captureEpoch: 1, event: 'recording' });
     const parts = corpus.verse('18:1')!.searchText.split(/\s+/);
     const send = (n: number, seq: number) => s.handle({ type: 'transcript', captureEpoch: 1, seq, receivedAt: seq, tokens: [{ text: parts.slice(0, n).join(' '), isFinal: false }] });
@@ -55,12 +56,14 @@ describe('live hypothesis following', () => {
     expect(s.follower.currentVerse).toBeNull();
     const cursor = s.display.cursor!.from;
     send(9, 1);
+    await clock.advance(90);
     expect(s.display.cursor!.from).toBeGreaterThan(cursor);
     s.handle({ type: 'hold', on: true });
     const held = s.display.cursor;
     send(11, 2);
     expect(s.display.cursor).toEqual(held);
     s.handle({ type: 'hold', on: false });
+    await clock.advance(90);
     expect(s.display.verse?.key).toBe('18:1');
     expect(s.display.cursor!.from).toBeGreaterThan(held!.from);
     s.handle({ type: 'capture', captureEpoch: 1, event: 'stopped' });

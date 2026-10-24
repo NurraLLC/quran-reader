@@ -14,8 +14,8 @@ import { SharedHours } from './Sponsor';
 import { ReaderAppearance, useReaderAppearance } from './ReaderAppearance';
 import { audioRoute, transcriptUse, SILENCE_CONTROL, REQUEST_PRIVACY } from './privacy-copy';
 import { FollowDemo } from './FollowDemo';
-import { keepMeaningsInside } from './gloss';
 import { onReaderChoiceKey, readerHandReadingKey } from './reader-choice';
+import { WordMeaning, useWordHistory } from './WordMeaning';
 
 type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { number: number; name: string; nameArabic: string; translation: string; glossCredit: string | null; ayahs: Ayah[] };
@@ -23,13 +23,14 @@ type Auth = 'checking' | 'owner' | 'unauthorized' | 'unavailable';
 
 /** Binds the ayah-end ornament to the last word so a line never starts with it. */
 const NBSP = String.fromCharCode(0xa0);
-/** Room under the recited word for its meaning label (it hangs about 22 px below the word). */
-const MEANING_ROOM = 28;
+/** Breathing room around the measured Arabic–English pair above the bottom controls. */
+const MEANING_ROOM = 8;
 
 /** The same anchor governs automatic following and whether hand scrolling has left it behind. */
 function readingAnchor(key: string, availableHeight: number) {
   const ayah = document.getElementById(`a-${key}`);
-  const active = ayah?.querySelector<HTMLElement>('.r-word.active');
+  const word = ayah?.querySelector<HTMLElement>('.r-word.active');
+  const active = word?.parentElement?.querySelector('.word-meaning') ? word.parentElement : word;
   const long = !!ayah && ayah.getBoundingClientRect().height > availableHeight;
   const opening = ayah?.querySelector<HTMLElement>('.r-word') ?? ayah?.querySelector<HTMLElement>('.r-en');
   return {
@@ -234,6 +235,7 @@ export function Reader() {
 
   const d = snap?.display;
   const cur = d?.verse ?? null;
+  const recentMeanings = useWordHistory(cur?.key, peek && peek.key === cur?.key ? { from: peek.i, to: peek.i } : d?.cursor);
   const lang = d?.style.language ?? 'both';
   const [saved, setSaved] = useState<Saved>(loadSaved);
   /** A silent reading place to return to once its surah is on the page (from a reload, or Continue). */
@@ -376,6 +378,7 @@ export function Reader() {
   }, []);
   const place = useRef<ReturnType<typeof readPlace>>(null);
 
+
   // A language or text-size change reflows every ayah. While following, the recited ayah is brought
   // back below (the effect after this one); while reading on by hand, the ayah being read stays where
   // it was on the screen, at the same point in it. Applied before paint.
@@ -478,20 +481,6 @@ export function Reader() {
       window.removeEventListener('keydown', onKey);
     };
   }, [readPlace]);
-
-  // Meanings stay inside the column (after every render, and when the window changes size).
-  useLayoutEffect(() => {
-    const page = document.querySelector('.reader .r-page');
-    if (page) keepMeaningsInside(page, (g) => g.closest<HTMLElement>('.r-ayah'));
-  });
-  useEffect(() => {
-    const again = () => {
-      const page = document.querySelector('.reader .r-page');
-      if (page) keepMeaningsInside(page, (g) => g.closest<HTMLElement>('.r-ayah'));
-    };
-    window.addEventListener('resize', again);
-    return () => window.removeEventListener('resize', again);
-  }, []);
 
   const run = (text: string) => {
     const id = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -693,7 +682,7 @@ export function Reader() {
               </figcaption>
             </figure>
             <h1>Recite, and the page follows{NBSP}along.</h1>
-            <p className="r-sub">Each word you recite lights up with its meaning, on your phone or on your stream.</p>
+            <p className="r-sub">Follow the Arabic. Read the meanings together. Let each ayah sink in.</p>
             <FollowDemo />
             {continueAt && (
               <button
@@ -754,14 +743,16 @@ export function Reader() {
             <div className="r-passage" onKeyDown={onPassageKey} onFocus={onPassageFocus} onBlur={onPassageBlur}>
             {shownSurah.ayahs.map((a) => {
               const isCur = a.key === cur!.key;
-              const cursor = isCur ? d!.cursor : null;
+              const cursor = isCur && peek?.key === a.key ? { from: peek.i, to: peek.i } : isCur ? d!.cursor : null;
+              const hasMeanings = (lang === 'both' && isCur || peek?.key === a.key) && a.glosses?.some(Boolean);
               const words = toQpcHafsEncoding(a.arabic).split(/\s+/).filter(Boolean);
               const markerStop = a.key === roveKey && roveWord === null;
               return (
                 <section
                   key={a.key}
                   id={`a-${a.key}`}
-                  className={`r-ayah${isCur ? ' current' : ''}`}
+                  className={`r-ayah${isCur ? ' current' : ''}${hasMeanings ? ' has-meanings' : ''}`}
+                  data-inspecting={peek?.key === a.key || undefined}
                   onClick={() => goto(a.key)}
                   role="group"
                   aria-label={`${shownSurah.name} ${a.key}`}
@@ -773,16 +764,12 @@ export function Reader() {
                         const active = !!cursor && i >= cursor.from && i <= cursor.to;
                         const passed = !!cursor && i < cursor.from;
                         const peeked = peek?.key === a.key && peek.i === i;
-                        const gloss = peeked
-                          ? (a.glosses?.[i] ?? null)
-                          : active && lang === 'both' && i === cursor!.from
-                            ? a.glosses?.slice(cursor!.from, cursor!.to + 1).filter(Boolean).join(' ') || null
-                            : null;
                         const hasMeaning = !!a.glosses?.[i];
                         return (
                           // The last word and the ayah number stay on one line (the number is a button,
                           // and a no-break space alone does not hold an inline-block to the word).
                           <span key={i} className={i === words.length - 1 ? 'r-ayah-end' : undefined}>
+                            <span className="word-pair">
                             <span
                               className={`r-word${active ? ' active' : ''}${passed ? ' passed' : ''}${peeked ? ' peeked' : ''}`}
                               // Tapping a word shows its meaning; tapping elsewhere in the ayah follows from it.
@@ -791,7 +778,8 @@ export function Reader() {
                               {...(hasMeaning ? { role: 'button', tabIndex: a.key === roveKey && roveWord === i ? 0 : -1, 'data-rove': i } : {})}
                             >
                               {w}
-                              {gloss && <span className="r-gloss" lang="en" dir="ltr">{gloss}</span>}
+                            </span>
+                            {(hasMeanings || peeked) && <WordMeaning text={a.glosses?.[i]} index={i} active={active || peeked} context={isCur && recentMeanings.includes(i)} onInspect={() => { setPeek(peeked ? null : { key: a.key, i }); setSaid(a.glosses?.[i] ?? ''); }} />}
                             </span>
                             {i < words.length - 1 ? ' ' : <>{NBSP}<button className="r-mark r-ayah-follow" lang="en" data-rove="n" tabIndex={markerStop ? 0 : -1} aria-describedby={markerStop ? 'r-keys-hint' : undefined} aria-label={`Follow from ${shownSurah.name} ${a.key}`} aria-current={isCur ? 'true' : undefined} onClick={(e) => { e.stopPropagation(); goto(a.key); }}><span aria-hidden="true" lang="ar">{arabicNumber(a.ayah)}</span></button></>}
                           </span>

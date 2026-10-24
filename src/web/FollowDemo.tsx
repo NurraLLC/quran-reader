@@ -4,13 +4,13 @@
 // tapping a word hand control to the visitor. With reduced motion it never plays by itself.
 // Every word and meaning is the product's own source data; the timing is illustrative.
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
-import { keepMeaningsInside } from './gloss';
 import { u } from './net';
 import { arabicNumber } from './VerseDisplay';
+import { WordMeaning, useWordHistory } from './WordMeaning';
 
-type Ayah = { key: string; ayah: number; arabic: string; glosses: Array<string | null> | null };
+type Ayah = { key: string; ayah: number; arabic: string; english: string; glosses: Array<string | null> | null };
 type Surah = { name: string; glossCredit: string | null; ayahs: Ayah[] };
 type Step = { a: number; w: number };
 
@@ -29,7 +29,6 @@ export function FollowDemo() {
   const [said, setSaid] = useState('');
   const touched = useRef(false);
   const root = useRef<HTMLElement>(null);
-  const windowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,6 +43,7 @@ export function FollowDemo() {
   const words = ayahs.map((a) => toQpcHafsEncoding(a.arabic).split(/\s+/).filter(Boolean));
   const steps: Step[] = words.flatMap((ws, a) => ws.map((_, w) => ({ a, w })));
   const step = steps[Math.min(i, steps.length - 1)];
+  const recent = useWordHistory(ayahs[step?.a]?.key, step ? { from: step.w, to: step.w } : null);
 
   // Plays once, when most of it is on screen, unless the visitor already took control.
   useEffect(() => {
@@ -70,10 +70,6 @@ export function FollowDemo() {
     const t = setTimeout(() => setI((n) => n + 1), nextAyah ? AYAH_END_MS : WORD_MS);
     return () => clearTimeout(t);
   }, [playing, i, steps.length]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useLayoutEffect(() => {
-    if (windowRef.current) keepMeaningsInside(windowRef.current, () => windowRef.current);
-  });
 
   if (failed) return null;
   if (!surah || !step) return <div className="r-demo r-demo-loading" aria-hidden="true" />;
@@ -104,24 +100,23 @@ export function FollowDemo() {
         <span className="r-demo-badge">Example</span>
         <span className="r-demo-where" aria-hidden="true">{surah.name} {ayahs[step.a].key}</span>
       </div>
-      <div className="r-demo-window" ref={windowRef}>
-        {/* One ayah per page, stacked; the stack moves up a page when the next ayah begins. */}
-        <div className="r-demo-pages" style={{ transform: `translateY(${(-step.a * 100) / ayahs.length}%)` }}>
+      <div className="r-demo-window">
+        {/* Shared measured room: a new ayah never pushes the controls or the full translation. */}
+        <div className="r-demo-pages">
           {ayahs.map((a, ai) => (
             <p key={a.key} className={`r-ar r-demo-line${ai === step.a ? ' current' : ''}`} lang="ar" dir="rtl" aria-hidden={ai !== step.a || undefined}>
               {words[ai].map((w, wi) => {
                 const active = ai === step.a && wi === step.w;
-                const meaning = active ? meaningOf(step) : null;
                 return (
-                  <span key={wi}>
+                  <span key={wi}><span className="word-pair">
                     <span
                       className={`r-word${active ? ' active' : ''}${ai < step.a || (ai === step.a && wi < step.w) ? ' passed' : ''}`}
                       onClick={() => show(steps.findIndex((s) => s.a === ai && s.w === wi))}
                     >
                       {w}
-                      {meaning && <span className="r-gloss" lang="en" dir="ltr">{meaning}</span>}
-                    </span>{' '}
-                  </span>
+                    </span>
+                    <WordMeaning text={a.glosses?.[wi]} index={wi} active={active} context={ai === step.a && recent.includes(wi)} onInspect={() => show(steps.findIndex((s) => s.a === ai && s.w === wi))} />
+                  </span>{wi < words[ai].length - 1 ? ' ' : null}</span>
                 );
               })}
               <span className="r-mark" aria-hidden="true">{arabicNumber(a.ayah)}</span>
@@ -129,13 +124,16 @@ export function FollowDemo() {
           ))}
         </div>
       </div>
+      <div className="r-demo-understanding">
+        <div className="r-demo-translations">{ayahs.map((a, ai) => <p key={a.key} className={`r-en${ai === step.a ? ' current' : ''}`} aria-hidden={ai !== step.a || undefined}>{a.english}</p>)}</div>
+      </div>
       <div className="r-demo-controls">
         <button type="button" onClick={toggle}>{playing ? 'Pause' : ended ? 'Replay' : 'Play'}</button>
         <button type="button" onClick={() => show((i + 1) % steps.length)}>Next word</button>
       </div>
       <p className="r-sr-only" aria-live="polite">{said}</p>
       <figcaption id="r-demo-caption" className="r-demo-caption">
-        An example, not live listening ({surah.name} {first.key}–{last.ayah}). Tap any word for its meaning.{surah.glossCredit ? ` ${surah.glossCredit}.` : ''}
+        An example, not live listening ({surah.name} {first.key}–{last.ayah}). Word meanings follow Arabic order; the sentence translation stays below.{surah.glossCredit ? ` ${surah.glossCredit}.` : ''}
       </figcaption>
     </figure>
   );

@@ -21,7 +21,7 @@ test('reader: request, word meaning, language and continue where you left off', 
   // Tapping a word shows its meaning (when word-by-word data is installed) and does not move the page.
   const word = page.locator('.r-ayah.current .r-word').nth(1);
   await word.tap();
-  if ((await page.locator('.r-word.peeked').count()) > 0) await expect(page.locator('.r-word.peeked .r-gloss')).toBeVisible();
+  if ((await page.locator('.r-word.peeked').count()) > 0) await expect(page.locator('.r-ayah.current .word-meaning.is-active')).toBeVisible();
   await expect(page.locator('.r-ayah.current')).toHaveAttribute('id', 'a-55:13');
 
   // Language switch.
@@ -80,8 +80,25 @@ test('reader: menu to home and all surahs; following comes back when recitation 
   await send({ type: 'capture', captureEpoch: epoch, event: 'recording' });
   try {
     await say(4);
-    await expect(page.locator('.r-word.active')).toHaveCount(1);
+    await expect(page.locator('.r-ayah.current .r-word.active')).toHaveAttribute('data-rove', '3');
+    // Begin browsing after the navigation/following glide has settled, rather than injecting
+    // the gesture while Chromium is still latching the programmatic scroll animation.
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      let last = '';
+      let still = 0;
+      const frame = () => {
+        const position = String(scrollY);
+        still = position === last ? still + 1 : 0;
+        last = position;
+        if (still >= 4) resolve(); else requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+    }));
+    const beforeScroll = await page.evaluate(() => scrollY);
+    // The previous Home control is gone; put the pointer over the actual reading surface.
+    await page.mouse.move(180, 400);
     await page.mouse.wheel(0, 4000);
+    await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(beforeScroll + 300);
     await expect(page.locator('.r-back')).toBeVisible();
     await page.waitForTimeout(3200);
     await say(10);

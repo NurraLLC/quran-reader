@@ -35,6 +35,15 @@ Not carried over (Moard-specific): always-listening English TALK endpoint tuning
 
 ## Learning-loop record
 
+2026-10-23 word alignment: applied the referenced Moard motion/latency, surface-quality,
+cross-runtime and learning-loop guidance to the owner's recording and a failing first-word
+regression. Removed prediction at the session owner; one source position drives both the Arabic
+highlight and its directly aligned English meaning. Reader, example and audience share the same
+native paired-cell layout, reserving each meaning's own space without collision suppression.
+`tests/tracker/word-follow.test.ts` and `tests/ui/word-meaning.spec.ts`
+own repeat/partial/batch and actual-render alignment regressions. See
+[the repair and evidence boundaries](WORD_ALIGNMENT_REVIEW.md). Moard was read only.
+
 2026-10-02 motion polish: reread the four required Moard skills and current
 `harbor/intelligence/contextual_ranking_composition.py` read-only. Applied its
 stable-owner lesson to preserve passage mounting while removing the verse-scale

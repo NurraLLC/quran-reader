@@ -29,6 +29,8 @@ test('partial speech moves the visible word before finalization in both live vie
   mkdirSync('test-results/live-follow', { recursive: true });
   await partial(6);
   await expect(r.locator('.active-word')).toHaveCount(1);
+  await expect(r.locator('.word-meaning.is-active')).toHaveCount(1);
+  await expect(r.locator('.gloss')).toHaveCount(0);
   const first = Number(await r.locator('.active-word').getAttribute('data-word-index'));
   await r.screenshot({ path: 'test-results/live-follow/first-word-position.png' });
   for (const n of [7, 8, 9]) {

@@ -835,8 +835,8 @@ export class SonioxCapture {
   }
 
   /**
-   * Breaths between words, for keeping the highlight in step (the server's pace.ts): sent when the
-   * voice stops or returns, stamped with the provider audio time it happened.
+   * Voice boundaries for diagnostic replay: sent when voice stops or returns, stamped with the
+   * provider audio time. A voice onset does not identify or advance a Quran word.
    */
   private onPause(speaking: boolean) {
     const origin = this.timed?.audioOrigin;

@@ -1,5 +1,9 @@
 # Live recitation following review
 
+Current behavior: [October 23 word alignment repair](WORD_ALIGNMENT_REVIEW.md). The September
+29 pace predictor and its timing results below are historical; live highlighting now follows
+recognized speech and supports repeated words without clock-based advancement.
+
 September 28, 2026. Local project: C:\QuranOverlay. No deployment.
 
 ## What caused the experience

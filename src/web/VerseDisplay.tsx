@@ -9,6 +9,7 @@ import type { DisplayState } from '../shared/contracts';
 import { toQpcHafsEncoding } from '../shared/display-encoding';
 import { NurraWordmark } from './Nurra';
 import { shownPages, type PageWords } from './display-pages';
+import { WordMeaning, useWordHistory } from './WordMeaning';
 
 type Rgb = [number, number, number];
 const WHITE: Rgb = [255, 255, 255];
@@ -65,6 +66,7 @@ export type LayoutInfo = PageWords & {
 };
 
 type Lines = string[][];
+const lineHeights = new WeakMap<Lines, number>();
 
 let measureRoot: HTMLDivElement | null = null;
 
@@ -78,7 +80,7 @@ function root(): HTMLDivElement {
   return measureRoot;
 }
 
-function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean, weight = 400): Lines {
+function measureLines(words: string[], font: string, px: number, lineHeight: number, width: number, rtl: boolean, weight = 400, meanings?: Array<string | null>) : Lines {
   const r = root();
   r.style.width = `${width}px`;
   r.style.fontFamily = font;
@@ -91,7 +93,28 @@ function measureLines(words: string[], font: string, px: number, lineHeight: num
   const spans: HTMLSpanElement[] = [];
   words.forEach((w, i) => {
     const s = document.createElement('span');
-    s.textContent = w;
+    if (meanings?.[i]) {
+      // Match the live paired cell, including an ornament bound outside the last Arabic word.
+      const markAt = w.lastIndexOf(NBSP);
+      const pair = document.createElement('span');
+      pair.className = 'word-pair';
+      pair.style.lineHeight = String(lineHeight);
+      const ar = document.createElement('span');
+      ar.className = 'quran-word';
+      ar.textContent = markAt < 0 ? w : w.slice(0, markAt);
+      const en = document.createElement('span');
+      en.className = 'word-meaning';
+      en.lang = 'en';
+      en.dir = 'ltr';
+      en.style.font = `600 ${Math.max(26, .3 * px)}px/1.15 var(--ui)`;
+      en.textContent = meanings[i];
+      pair.append(ar, en);
+      s.append(pair);
+      if (markAt >= 0) {
+        s.style.whiteSpace = 'nowrap';
+        s.append(document.createTextNode(w.slice(markAt)));
+      }
+    } else s.textContent = w;
     r.appendChild(s);
     spans.push(s);
     if (i < words.length - 1) r.appendChild(document.createTextNode(' '));
@@ -106,6 +129,7 @@ function measureLines(words: string[], font: string, px: number, lineHeight: num
     }
     lines[lines.length - 1].push(words[i]);
   }
+  lineHeights.set(lines, Math.max(px * lineHeight, ...spans.map((s) => s.getBoundingClientRect().height)));
   return lines;
 }
 
@@ -119,30 +143,6 @@ function chunk<T>(xs: T[], n: number): T[][] {
 const NBSP = String.fromCharCode(0xa0);
 const AR_LH = 1.95;
 const EN_LH = 1.42;
-
-let arabicBox = 0;
-/** An Arabic word's own box (the font's ascent + descent) per px of size: the meaning hangs below it. */
-function arabicBoxRatio(): number {
-  if (!arabicBox) {
-    const s = document.createElement('span');
-    Object.assign(s.style, { fontFamily: ARABIC_FONT, fontSize: '100px', lineHeight: String(AR_LH) });
-    s.textContent = 'بسم';
-    const r = root();
-    r.textContent = '';
-    r.appendChild(s);
-    arabicBox = s.getBoundingClientRect().height / 100 || 1.7;
-  }
-  return arabicBox;
-}
-
-/**
- * Space between Arabic lines for the recited word's meaning (a pill hung under the word, sized as
- * in .gloss): enough that it clears the words of the line below instead of covering their tops.
- */
-function meaningBand(a: number): number {
-  const g = Math.max(26, 0.3 * a);
-  return Math.max(0, Math.ceil(arabicBoxRatio() * a + g * (0.06 + 1.15 + 0.24) + 4 - AR_LH * a));
-}
 
 /** Measured fits by their inputs: a passage is re-planned at each of its ayahs with the same answer. */
 const fits = new Map<string, unknown>();
@@ -251,7 +251,7 @@ const MARK_H = MARK_TOP + 23;
  * margin (and the 44 that keeps room for the recited word's meaning above it), and the paging sizes at
  * scale 1, above the band's smallest fitted sizes (Arabic 46, English 26, English only 30).
  */
-const BAND = { height: 354, refH: 66, gap: 16, meaningGap: 44, ar: 50, en: 28, enOnly: 32 };
+const BAND = { height: 354, refH: 66, gap: 16, ar: 50, en: 28, enOnly: 32 };
 /** Height kept for the next-ayah preview (hairline, optional surah label, one Arabic line). */
 const NEXT_H = 160;
 /** Height the surah banner takes on a surah's opening screen (full frame only). */
@@ -290,17 +290,28 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
   const enSets = state.style.language === 'both' ? (group ?? [v]).map((g) => g.english.split(/\s+/).filter(Boolean)) : [];
   const current = group ? Math.max(0, group.findIndex((g) => g.key === v.key)) : 0;
   const following = state.style.language === 'both' && (state.style.readingMode ?? 'follow') === 'follow';
-  const band = (a: number) => (following ? meaningBand(a) : 0);
-  const arH = (lines: number, a: number) => lines * a * AR_LH + Math.max(0, lines - 1) * band(a);
+  const arMeanings = following ? (group ? group.flatMap((g) =>
+    g.arabic.split(/\s+/).filter(Boolean).map((_, wi) => (g.glosses ?? (g.key === v.key ? v.glosses : null))?.[wi] ?? null))
+    : arWords.map((_, wi) => v.glosses?.[wi] ?? null)) : undefined;
+  const heights = new Map<number, number>();
+  const measureAr = (a: number, width: number) => {
+    const lines = measureLines(arWords, ARABIC_FONT, a, AR_LH, width, true, 400, arMeanings);
+    heights.set(a, lineHeights.get(lines) ?? a * AR_LH);
+    return lines;
+  };
+  // English occupies the cell's second row, included in the measured line height.
+  const band = (_a: number) => 0;
+  const rowHeight = (a: number) => heights.get(a) ?? a * AR_LH;
+  const arH = (lines: number, a: number) => lines * rowHeight(a);
 
   const banner = opensSurah(state, !!group) && !(lowerWanted && state.style.readingMode !== 'word') && state.style.readingMode !== 'word';
   const FULLB: Geometry = banner ? { ...geo.full, height: geo.full.height - geo.bannerH } : geo.full;
   type Fit = { a: number; e: number; al: Lines; els: Lines[]; enLines: number };
   const tryFit = (g: Geometry, arMax: number, arMin: number, enMax: number, enMin: number) =>
-    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}/${state.style.englishScale}|${following}|${geo.englishFont}/${geo.englishWeight}|${arWords.join(' ')}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
+    remember(`ar|${g.width}x${g.height}/${g.gap}/${g.refH}|${arMax}-${arMin}|${enMax}-${enMin}/${state.style.englishScale}|${following}|${geo.englishFont}/${geo.englishWeight}|${arWords.join(' ')}|${JSON.stringify(arMeanings)}|${enSets.map((ws) => ws.join(' ')).join('\n')}`, (): Fit | null => {
       for (let a = arMax; a >= arMin; a -= 2) {
         const e = Math.max(enMin, Math.min(enMax, Math.round(a * 0.5 * state.style.englishScale)));
-        const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, g.width, true);
+        const al = measureAr(a, g.width);
         const els = enSets.map((ws) => measureLines(ws, geo.englishFont, e, EN_LH, g.width, false, geo.englishWeight));
         const enLines = Math.max(0, ...els.map((l) => l.length));
         if (arH(al.length, a) + (enLines ? g.gap + enLines * e * EN_LH : 0) + g.refH <= g.height) return { a, e, al, els, enLines };
@@ -357,17 +368,16 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
     const a = Math.round(BAND.ar * scale);
     const e = Math.round(BAND.en * state.style.englishScale);
     const b = band(a);
-    const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, geo.lower.width, true);
+    const al = measureAr(a, geo.lower.width);
     const el = enSets.length ? measureLines(enSets[0], geo.englishFont, e, EN_LH, geo.lower.width, false, geo.englishWeight) : [];
     const body = BAND.height - BAND.refH;
-    const arLinesPerPage = el.length ? 1 : Math.max(1, Math.floor((body - MARK_H + b) / (a * AR_LH + b)));
+    const arLinesPerPage = el.length ? 1 : Math.max(1, Math.floor((body - MARK_H) / rowHeight(a)));
     const arabicPages = chunk(al, arLinesPerPage);
     const marked = arabicPages.length > 1;
     // The recited word's meaning hangs under its line: the marker sits below the room kept for it.
     const arabicMarkTop = marked ? MARK_TOP + b : null;
     const arabicH = arH(Math.min(al.length, arLinesPerPage), a) + (marked ? b + MARK_H : 0);
-    // Under the marker the translation needs only the band's gap; else it keeps the meaning's room.
-    const englishTop = marked || !following ? BAND.gap : BAND.meaningGap;
+    const englishTop = BAND.gap;
     const room = body - arabicH - englishTop;
     const enLinesPerPage = el.length * e * EN_LH <= room ? Math.max(1, el.length) : Math.max(1, Math.floor((room - MARK_H) / (e * EN_LH)));
     const englishPages = el.length ? chunk(el, enLinesPerPage) : [[]];
@@ -410,13 +420,11 @@ function planFor(state: DisplayState, useGroup = true, geo: Geo = DEFAULT_GEO): 
   const a = Math.round(geo.ar.page * scale);
   const e = geo.en.page;
   const b = band(a);
-  const al = measureLines(arWords, ARABIC_FONT, a, AR_LH, geo.full.width, true);
+  const al = measureAr(a, geo.full.width);
   const el = enSets.length ? measureLines(enSets[0], geo.englishFont, e, EN_LH, geo.full.width, false, geo.englishWeight) : [];
   const body = geo.full.height - geo.full.refH - (el.length ? geo.full.gap : 0);
   const arShare = el.length ? 0.54 : 1;
-  // Lines per Arabic page as without meanings (page turns follow the recitation; fewer lines would
-  // turn them more often); the room kept for the meaning comes out of the translation's share.
-  const arLinesPerPage = Math.max(1, Math.floor((body * arShare) / (a * AR_LH)));
+  const arLinesPerPage = Math.max(1, Math.floor((body * arShare) / rowHeight(a)));
   const enLinesPerPage = Math.max(1, Math.floor((body - arH(Math.min(al.length, arLinesPerPage), a)) / (e * EN_LH)));
   const arabicPages = chunk(al, arLinesPerPage);
   const englishPages = el.length ? chunk(el, enLinesPerPage) : [[]];
@@ -581,6 +589,7 @@ export function VerseDisplay({
 }) {
   const v = state.verse;
   const fw = frame?.width ?? 0;
+  const recentMeanings = useWordHistory(v?.key, state.cursor);
   const fh = frame?.height ?? 0;
   const geo = useMemo(() => {
     const base = fw && fh ? panelGeo({ width: fw, height: fh }, theme) : DEFAULT_GEO;
@@ -626,20 +635,6 @@ export function VerseDisplay({
     }
   });
 
-  // The meaning is centred under its word but never leaves the panel: under a word at the end of a
-  // line, a long meaning is moved inward. Layout offsets ignore the stage's scale; measured after
-  // layout, applied before paint.
-  const stageRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const g = stageRef.current?.querySelector<HTMLElement>('.gloss');
-    const panel = g?.closest<HTMLElement>('.panel');
-    if (!g || !panel) return;
-    let x = g.offsetLeft - g.offsetWidth / 2;
-    for (let el = g.offsetParent as HTMLElement | null; el && el !== panel; el = el.offsetParent as HTMLElement | null) x += el.offsetLeft;
-    const pad = 12;
-    const shift = Math.max(0, pad - x) - Math.max(0, x + g.offsetWidth - (panel.offsetWidth - pad));
-    g.style.setProperty('--gloss-shift', `${Math.round(shift)}px`);
-  });
 
   const panelSize = frame ? { width: frame.width, height: frame.height } : undefined;
   if (!fontsReady) return <div className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : undefined} data-theme={theme} data-empty="true" style={panelSize} />;
@@ -662,7 +657,7 @@ export function VerseDisplay({
   const heldText = lastFocus.current?.key === v?.key ? lastFocus.current?.text : null;
   const focusText = state.cursor ? displayWords.slice(state.cursor.from, state.cursor.to + 1).join(' ') : (heldText ?? displayWords[0] ?? '');
   return (
-    <div ref={stageRef} className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-position={state.style.captionPosition} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={{ ...panelSize, ...(!frame ? accentVars(state.style.accent) : {}), '--caption-inset': `${state.style.captionInset}px`, '--panel-opacity': state.style.panelOpacity } as React.CSSProperties}>
+    <div className="stage" data-bg={frame ? 'panel' : state.style.background} data-layout={frame ? 'panel' : layout} data-position={state.style.captionPosition} data-theme={theme} data-reading={mode} data-lang={lang} data-preview={preview || undefined} style={{ ...panelSize, ...(!frame ? accentVars(state.style.accent) : {}), '--caption-inset': `${state.style.captionInset}px`, '--panel-opacity': state.style.panelOpacity } as React.CSSProperties}>
       {/* Small, quiet credit while an ayah is up (the broadcaster can turn it off; the stream scene credits Nurra itself).
           Hiding fades it with the ayah instead of cutting it a frame early. */}
       {!!plan && !!v && state.style.credit !== false && !frame && (
@@ -707,9 +702,11 @@ export function VerseDisplay({
                     const text = meta?.mark ? word.slice(0, word.length - meta.mark.length - 1) : word;
                     return (
                       <span key={index}>
-                        <span className={`${cls}${gloss && active && w === state.cursor!.from ? ' has-gloss' : ''}`} data-word-index={w} aria-current={active ? 'true' : undefined}>
+                        <span className="word-pair">
+                        <span className={cls} data-word-index={w} aria-current={active ? 'true' : undefined}>
                           {text}
-                          {gloss && active && w === state.cursor!.from && <span className="gloss" lang="en" dir="ltr">{gloss}</span>}
+                        </span>
+                        {mode === 'follow' && lang === 'both' && w >= 0 && <WordMeaning text={meta ? state.group?.[meta.ayah]?.glosses?.[w] ?? (rel === 'current' ? v.glosses?.[w] : null) : v.glosses?.[w]} index={w} active={active} context={rel === 'current' && recentMeanings.includes(w)} />}
                         </span>
                         {meta?.mark && <>{NBSP}<span className={`quran-word ayah-${rel}${upNext ? ' ayah-upnext' : ''} ayah-mark`}>{meta.mark}</span></>}
                         {j < line.length - 1 ? ' ' : ''}

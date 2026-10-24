@@ -4,20 +4,15 @@ import type { Word } from '../../shared/transcript';
 import type { CorpusIndex } from './index';
 import { DEFAULT_TRACKER_CONFIG, TrackerEngine } from './reducer';
 import type { Candidate, NeighbourProvider } from './candidates';
-import type { Obs } from './align';
-import { tokenize } from './normalize';
-import type { Timed } from './pace';
 
 export type LivePosition = {
   verseIndex: number;
   word: number;
+  /** First aligned word in this ayah, including when several words arrived together. */
+  firstWord: number;
   provisional: boolean;
   /** When the heard word placed at `word` began (provider audio ms), if known. */
   startMs: number | null;
-  /** Heard words placed in order on the corpus, with their starts: the reciter's pace (pace.ts). */
-  path: Timed[];
-  /** The newest heard word when it is not placed yet: possibly the next word just beginning. */
-  newest: { key: string; startMs: number } | null;
 };
 type Anchor = { pos: number; verseIndex: number };
 
@@ -68,31 +63,22 @@ export class LiveCursor {
       }
     }
     if (pos) this.anchor = pos;
-    const newest = unplaced(words, step.obs ?? [], by);
     // One new word that does not match yet is not evidence of anything: an elongated madd or a long
     // word spoken slowly arrives in pieces ("وملائ" before "كته", sometimes finalized mid-word).
     // Keep the last position rather than blinking the highlight off; a second unmatched word, or a
     // rewritten (shorter) hypothesis, clears it.
-    if (!pos) return this.last && words.length >= this.lastLen && words.length <= this.lastLen + 1 ? { ...this.last, provisional, newest } : (this.last = null);
+    if (!pos) return this.last && words.length >= this.lastLen && words.length <= this.lastLen + 1 ? { ...this.last, provisional } : (this.last = null);
     const obs = step.obs ?? [];
-    const path: Timed[] = [];
     let startMs: number | null = null;
     for (const [oi, p] of by?.pairs ?? []) {
       const s = obs[oi]?.startMs;
       if (s === null || s === undefined) continue;
-      path.push({ pos: p, startMs: s });
       if (p === pos.pos) startMs = s;
     }
-    this.last = { verseIndex: pos.verseIndex, word: Math.max(0, pos.pos - this.ix.verseStart[pos.verseIndex]), provisional, startMs, path, newest };
+    const start = this.ix.verseStart[pos.verseIndex];
+    const first = by?.pairs.find(([, p]) => this.ix.wordVerse[p] === pos.verseIndex)?.[1] ?? pos.pos;
+    this.last = { verseIndex: pos.verseIndex, word: Math.max(0, pos.pos - start), firstWord: Math.max(0, first - start), provisional, startMs };
     this.lastLen = words.length;
     return this.last;
   }
-}
-
-/** The newest heard word, if the alignment did not place it (it may be a word just beginning). */
-function unplaced(words: readonly Word[], obs: readonly Obs[], by: Candidate | null): LivePosition['newest'] {
-  const w = words[words.length - 1];
-  if (w.startMs === null || (by && obs.length && by.lastObs === obs.length - 1)) return null;
-  const key = tokenize(w.text).find((t) => !t.foreign)?.key;
-  return key ? { key, startMs: w.startMs } : null;
 }

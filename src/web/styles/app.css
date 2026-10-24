@@ -65,8 +65,7 @@ html[data-surface='control'] body { background: var(--ink-0); color: var(--text)
 .stage[data-layout='lowerthird'] .arabic,
 .stage[data-layout='lowerthird'] .english { width: 1600px; }
 .arabic .line, .english .line { white-space: nowrap; }
-/* Room under each Arabic line for the recited word's meaning (VerseDisplay's meaningBand; 0 when no
-   meaning is shown), so the pill never covers the tops of the next line's words. */
+/* Paired meanings are inside the line's measured height. */
 .arabic .line + .line { margin-top: var(--meaning-band, 0px); }
 /* Hide and unhide fade (220 ms) in every reading mode; reduced motion cuts (A10-08). */
 .stage:not([data-reading='ayah']) .panel { border-radius: 0; box-shadow: none; }
@@ -370,7 +369,7 @@ html[data-surface='reader'] :is(.r-ayah, .r-word, .r-en, .r-page button, .r-page
 .r-ayah.current + .r-ayah, .r-ayah.current { border-top-color: transparent; }
 .r-ar { margin: 0; font-family: 'Uthmanic Hafs', serif; font-size: calc(clamp(27px, 7.4vw, 40px) * var(--reader-scale, 1)); line-height: 2.25; color: var(--ivory); text-align: right; }
 .reader[data-lang='arabic'] .r-ar { font-size: calc(clamp(30px, 8.2vw, 44px) * var(--reader-scale, 1)); }
-.r-word { position: relative; border-radius: 6px; transition: color 90ms ease-out, background 90ms ease-out; }
+.r-word { position: relative; border-radius: 6px; transition: color 90ms ease-out; }
 .r-word.passed { color: #b9c9c3; }
 .r-word.active { color: #ffe0a0; background: rgba(207, 170, 98, 0.16); box-shadow: 0 2px 0 var(--gold); }
 /* Centred under its word, moved inward at a line's ends and wrapped when wider than the column
@@ -392,6 +391,36 @@ html[data-surface='reader'] :is(.r-ayah, .r-word, .r-en, .r-page button, .r-page
 .r-ayah:not(.current) .r-en { color: #c9c6bb; }
 .r-credit { text-align: center; color: var(--muted); font-size: 12.5px; margin: 28px 0 0; }
 
+/* A word and its meaning share one measured cell. Even an unrevealed meaning owns its space:
+   no collisions, sideways labels or layout movement when a short word is spoken. */
+.word-pair { display: inline-block; position: relative; line-height: 1.85; vertical-align: baseline; }
+.word-pair:has(> .word-meaning) { display: inline-grid; grid-template-columns: minmax(0, 1fr); width: max-content; max-width: 100%; vertical-align: top; text-align: center; }
+.word-pair > :is(.r-word, .quran-word) { justify-self: center; }
+.word-meaning { position: relative; margin-top: 2px; min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-align: center;
+  font: 500 14px/1.3 var(--ui); padding: 2px 5px 3px; border-radius: 5px; color: var(--paper);
+  opacity: 0; pointer-events: none; transition: opacity 360ms ease, color 180ms ease; z-index: 1; }
+.word-meaning.is-context { opacity: .68; pointer-events: auto; transition-duration: 240ms, 180ms; }
+.word-meaning.is-active { opacity: 1; color: var(--accent-bright, #ffe0a0); pointer-events: auto; transition: none; animation: meaning-reveal 160ms ease-out both; }
+.word-pair:has(> .word-meaning)::before { content: ''; position: absolute; inset: 2px -2px -2px; border-radius: 9px;
+  background: linear-gradient(180deg, var(--accent-soft, rgba(207, 170, 98, .10)), rgba(207, 170, 98, .025));
+  box-shadow: 0 1px 0 var(--accent, var(--gold)); pointer-events: none; transform-origin: center; opacity: 0; transform: scaleX(.86);
+  transition: opacity 280ms ease, transform 240ms cubic-bezier(.2, .7, .2, 1); }
+.word-pair:has(> .word-meaning.is-active)::before { opacity: 1; transform: scaleX(1); transition-duration: 160ms, 200ms; }
+.word-pair:has(> .word-meaning.is-active) > :is(.r-word.active, .quran-word.active-word) { background: transparent; box-shadow: none; }
+/* Words stay in place; their light changes. Even the first reveal frame remains readable. */
+@keyframes meaning-reveal { from { opacity: .45; } to { opacity: 1; } }
+.reader .word-meaning { font-size: calc(clamp(14px, 3.8vw, 16px) * var(--reader-scale, 1)); }
+.r-ayah.has-meanings .r-ar { padding-bottom: 12px; }
+.r-ayah[data-inspecting] .word-meaning.is-active { color: var(--paper); }
+.r-ayah[data-inspecting] .word-pair:has(> .word-meaning.is-active)::before { box-shadow: 0 1px 0 var(--seek); background: rgba(143, 182, 214, .10); }
+.r-demo-understanding { padding: 0 18px 16px; }
+.r-demo-understanding .r-en { margin: 0; max-width: none; }
+.r-demo .word-meaning { font-size: 13.5px; }
+.r-demo-window { padding-bottom: 18px; }
+.stage .word-pair { line-height: 1.95; }
+.stage .word-meaning { font: 600 max(26px, .3em)/1.15 var(--ui); text-shadow: 0 1px 6px rgba(0, 0, 0, .85); }
+@media (prefers-reduced-motion: reduce) { .word-pair > .word-meaning { transition: none; animation: none; } .word-pair::before { transition: none !important; } }
+
 /* The reader's own page. These variables never reach an audience overlay or the charity scene. */
 html[data-surface='reader'][data-reader-theme='paper'] {
   --ink-0: #f6f0e2; --ink-1: #fcf8ee; --ink-2: #e8e1d2; --ink-3: #ddd4c1;
@@ -404,6 +433,7 @@ html[data-reader-theme='paper'] .r-word.active { color: #553811; background: #ed
 html[data-reader-theme='paper'] .r-word.passed { color: #516f62; }
 html[data-reader-theme='paper'] .r-ayah:not(.current) .r-en { color: #546465; }
 html[data-reader-theme='paper'] .r-gloss { color: #624015; background: #fffaf0; border-color: var(--gold-dim); }
+html[data-reader-theme='paper'] .word-meaning.is-active { color: #553811; background: #fffaf0; }
 html[data-reader-theme='paper'] .r-langs button.on,
 html[data-reader-theme='paper'] .r-continue,
 html[data-reader-theme='paper'] .r-resume,
@@ -746,16 +776,18 @@ a.about-ref:hover { text-decoration: underline; }
 .r-dock { padding-top: 30px; background: linear-gradient(180deg, rgba(10, 20, 24, 0) 0, var(--ink-0) 24px); }
 .r-index-more { display: block; min-height: 44px; margin: 12px auto 0; padding: 10px 18px; border-radius: 999px; }
 
-/* The start page's example of following (FollowDemo.tsx): one ayah per page in a fixed window; the
-   page moves up when the next ayah begins. Plays once, then rests; never by itself with reduced motion. */
+/* The example reserves the largest ayah's space; only its active word/meaning changes emphasis. */
 .r-demo { margin: 18px auto 26px; padding: 10px 0 12px; max-width: 30rem; border: 1px solid rgba(207, 170, 98, 0.22); border-radius: 18px; background: rgba(21, 40, 47, 0.45); text-align: left; }
 .r-demo-loading { min-height: 196px; }
 .r-demo-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; }
 .r-demo-badge { padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; font: 650 11.5px/1 var(--ui); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .r-demo-where { font: 500 12.5px/1 var(--ui); color: var(--muted); font-variant-numeric: tabular-nums; }
-.r-demo-window { position: relative; overflow: hidden; font-size: clamp(26px, 7vw, 34px); height: calc(2.3em + 24px); }
-.r-demo-pages { transition: transform 420ms cubic-bezier(0.2, 0.7, 0.2, 1); }
-.r-demo .r-demo-line { height: calc(2.3em + 24px); margin: 0; padding: 0 16px; font-size: inherit; line-height: 2.3; text-align: center; white-space: nowrap; }
+.r-demo-window { position: relative; overflow: hidden; font-size: clamp(26px, 7vw, 34px); }
+.r-demo-pages, .r-demo-translations { display: grid; }
+.r-demo .r-demo-line { grid-area: 1 / 1; visibility: hidden; margin: 0; padding: 0 16px; font-size: inherit; line-height: 2.3; text-align: center; white-space: normal; }
+.r-demo .r-demo-line.current { visibility: visible; }
+.r-demo-translations > .r-en { grid-area: 1 / 1; visibility: hidden; }
+.r-demo-translations > .r-en.current { visibility: visible; }
 .r-demo .r-word { cursor: pointer; }
 .r-demo-controls { display: flex; gap: 8px; padding: 0 14px; }
 .r-demo-controls button { min-height: 44px; padding: 8px 16px; border-radius: 999px; background: var(--ink-2); font: 600 14px/1 var(--ui); }
@@ -864,7 +896,7 @@ a.about-ref:hover { text-decoration: underline; }
 /* Over transparent footage the reference line and its credits sit on the same dark pill as the meaning. */
 .stage[data-bg='transparent'] .reference { padding: 0 26px; border-radius: 999px; background: rgba(9, 19, 23, 0.66); }
 /* Lower third, Arabic + English, following: leave room for the recited word's meaning above the translation. */
-.stage[data-layout='lowerthird'][data-lang='both'][data-reading='follow'] .english { margin-top: 44px; }
+.stage[data-layout='lowerthird'][data-lang='both'][data-reading='follow'] .english { margin-top: 16px; }
 /* The explanation scrolls; the agreement and both buttons stay in view, even on a 320×568 phone. */
 .listening-consent { width: min(calc(100vw - 24px), 32rem); max-height: 88dvh; overflow: hidden; color: #e7ece8; background: #102126; border: 1px solid #cfaa62; border-radius: 20px; padding: 0; font: 16px/1.6 system-ui, sans-serif; }
 .listening-consent::backdrop { background: #041014bb; }

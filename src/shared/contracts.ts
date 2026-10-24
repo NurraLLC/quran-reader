@@ -86,7 +86,7 @@ export const DisplayStateSchema = z.object({
   cursor: z.object({ from: z.number().int().nonnegative(), to: z.number().int().nonnegative() }).nullable().optional(),
   /** Short ayahs shown together with the current one, in order (it is among them); null = alone. */
   group: z
-    .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1), english: z.string().min(1) }))
+    .array(z.object({ key: z.string().regex(/^\d{1,3}:\d{1,3}$/), ayah: z.number().int().min(1).max(286), arabic: z.string().min(1), english: z.string().min(1), glosses: z.array(z.string().nullable()).nullable().optional() }))
     .nullable()
     .optional(),
   /** The ayah after the current one (a preview, never a claim about where the reciter is). */
@@ -204,7 +204,8 @@ export const ControlClientMessageSchema = z.discriminatedUnion('type', [
     receivedAt: z.number().finite(),
     /**
      * Provider audio time (ms since this stream's first audio) at that receipt: where the reciter
-     * is now, while the tokens describe where they were. Keeps the highlight in step (pace.ts).
+     * is now, while tokens describe recognised speech. Used for latency diagnostics, never to
+     * predict an unheard word.
      */
     audioMs: AudioMs.optional(),
   }),

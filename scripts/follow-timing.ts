@@ -16,7 +16,6 @@ import { Corpus, loadCorpus } from '../src/server/corpus/load';
 import { mapDisplayWords, type WordSpan } from '../src/server/corpus/word-map';
 import { Session } from '../src/server/sessions';
 import { buildIndex } from '../src/server/tracker/index';
-import { PACE } from '../src/server/tracker/pace';
 import { similarity, tokenize } from '../src/server/tracker/normalize';
 import { loadFixture } from '../src/replay/run';
 import { VClock } from '../src/replay/vclock';
@@ -30,13 +29,8 @@ const flag = (name: string) => {
   return i >= 0 ? process.argv[i + 1] : undefined;
 };
 const PROVIDER_LAG = Number(flag('--provider-lag') ?? 600);
-// Tuning: --pace maxLead=1,heardHorizonMs=900 overrides pace.ts constants for this run.
-for (const kv of (flag('--pace') ?? '').split(',').filter(Boolean)) {
-  const [k, v] = kv.split('=');
-  if (!(k in PACE)) throw new Error(`Unknown pace setting ${k}`);
-  (PACE as Record<string, number>)[k] = Number(v);
-}
-const values = new Set([flag('--provider-lag'), flag('--pace'), flag('--window')]);
+if (process.argv.includes('--pace')) throw new Error('Pace prediction was retired. Live highlighting follows heard words; --pace is no longer supported.');
+const values = new Set([flag('--provider-lag'), flag('--window')]);
 const args = process.argv.slice(2).filter((a) => !a.startsWith('--') && !values.has(a));
 const expand = (p: string) => (p.endsWith('.jsonl') ? [p] : readdirSync(p).filter((f) => f.endsWith('.jsonl')).map((f) => path.join(p, f)));
 const files = (args.length ? args : ['data/captures']).flatMap(expand);
