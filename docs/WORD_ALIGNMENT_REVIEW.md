@@ -1,6 +1,7 @@
 # Word alignment and reading experience — October 23, 2026
 
-Base: `bd56c02` in `C:\QuranOverlay`. Local repair and design work; no deployment.
+Base: `bd56c02` in `C:\QuranOverlay`. The owner subsequently requested publication;
+[LAUNCH_STATUS.md](LAUNCH_STATUS.md) records the October 23 deployment of `adb0cea`.
 
 ## Final behavior
 

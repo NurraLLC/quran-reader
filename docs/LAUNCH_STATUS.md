@@ -1,6 +1,48 @@
-# Launch status — 2026-10-02
+# Launch status — 2026-10-23
 
-## Current update: appearance, reading comfort and accurate scene preview
+## Current update: paired word meanings and evidence-based tracking
+
+The owner requested publication on October 23. The public reader at
+https://nurra.org/quran-reader/ now runs `quran-reader:adb0cea`, revision
+`adb0ceae6e625722519dde8ab76066bd1e13acb5`, image
+`sha256:a24aa22e83b3518016ab5daa2b25ba0d5b3ce32497011269f51719f3b2f190bd`.
+The previous production revision was `bd56c02`; the server checkout was clean
+before the fast-forward. Existing Sites routing was retained.
+
+Arabic and exact source-owned English meanings now share a reserved cell.
+Meanings reveal, settle into recent context, and fade away without moving the
+text or suppressing adjacent meanings. The complete ayah translation remains
+below. The cursor follows recognised speech, including repeats and partial
+corrections, instead of predicting unheard words. See
+[the implementation review](WORD_ALIGNMENT_REVIEW.md).
+
+- [GitHub CI](https://github.com/NurraLLC/quran-reader/actions/runs/40045219225)
+  passed on the deployed revision: 402 tests passed, 7 skipped; corpus validation,
+  typecheck, frontend build, image build, proxy validation and hosted startup/pool
+  checks passed. Local focused evidence remains 41 tracker/session tests and 25
+  browser flows, with the final motion and reduced-motion checks passing.
+- The complete Linux `live` image was built from that revision. Private startup
+  used temporary state, the production content cache read-only, and no speech
+  provider keys. It verified 114 chapters, 6,236 ayahs, source text at 1:1, 2:282
+  and 114:6, and frontend assets. The content checkpoint was about 0.4 hours old.
+- Production health, policy pages, protected anonymous sessions, control
+  WebSocket, all 114 chapters and all four deployed JS/CSS hashes passed public
+  verification. Direct origin access returns 404; the main Nurra site returns
+  200. The content-refresh timer remains active; contributions remain disabled.
+- There were zero open listening holds before the switch. The existing content
+  and financial/link-state volumes were preserved, and private environment/state
+  backups were made. The pool matched before and after: 276,923 funded seconds,
+  5,835 used, 104,934 available, 166,154 reserved, and zero additional recorded costs.
+- Public browser inspection of At-Tin 95:3 showed the source meaning “[the] city”
+  directly under balad (center error below 0.01 px, gap about 2 px), the loaded
+  Arabic font, and the unchanged complete English sentence. Listening stayed off.
+- Rollback container: `quran-reader-old-bd56c02-20261024T003502Z`. Backups remain
+  private in `/opt/quran-reader-backups`. The container suffix is a UTC timestamp.
+
+These checks establish the deployment and rendered page. They do not constitute
+a new speech-provider, owner-microphone, payment or native OBS acceptance run.
+
+## Previous update: appearance, reading comfort and accurate scene preview
 
 The owner explicitly requested this live update on October 2. Production runs
 `quran-reader:0b6a506` (image `02f5174f2884`, revision
