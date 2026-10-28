@@ -44,6 +44,33 @@ dispute adjustments remain operator work, as described in
 [PROJECT_BUDGET.md](PROJECT_BUDGET.md). No microphone, speech-provider, replay or
 native OBS acceptance was performed for this payment configuration change.
 
+### Checkout and formula audit follow-up
+
+- Browser inspection of the actual public $5 button reached live Stripe Checkout
+  for Support Quran Reader, $5.00 USD, one-time support for Nurra LLC with the
+  same 38-hour gross estimate and cost notice. Returned via the cancel link and
+  expired this checkout unpaid. No money or shared hours were added.
+- Public pool totals satisfy funded = used + recorded costs + reserve + available,
+  with a 13-cent conversion and $6 protected reserve. These are estimated hour
+  equivalents, not an invoice-reconciled cash balance.
+- Fixed local operator scripts `sponsor-pool.ts` and `project-cost.ts` to apply
+  the production reserve to reported availability; manual funding also now reads
+  the configured conversion. The deployed application already uses these settings.
+  This script-only correction has not been installed in the production image.
+  Six focused budget tests and TypeScript checking passed. No application
+  deployment or listening interruption was needed for the audit.
+- Read-only provider accounting for October 21–28 returned 13 reader-attributed
+  completed Soniox records, $0.039392 and 1,387.423 reported audio seconds.
+  OpenRouter returned $0.006486984 lifetime key usage and $4.993513016 remaining
+  under its $5 cap. These windows/units differ from lifetime connected listening;
+  no expense was inferred or entered. Invoice reconciliation remains operator work.
+- A diagnostic search accidentally included the ignored local production settings
+  file. Its Soniox and Quran Foundation credentials match the deployed values
+  and require rotation. No credentials are recorded here. Git history scanning
+  passed (1,028 file versions); this does not undo diagnostic-output exposure.
+  Production uses OpenRouter for JEV; no direct Typesafe key is configured.
+  No provider key was rotated or revoked during this audit.
+
 ## Previous update: public reader access recovery
 
 The public reader now runs `quran-reader:2fd1064`, revision

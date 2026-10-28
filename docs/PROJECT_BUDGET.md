@@ -28,8 +28,10 @@ Use two distinct calculations:
 The reserve is money still held, not a second expense. Replacing a voice estimate
 with its actual charge must reconcile the difference; importing the complete
 voice invoice as an extra cost would charge it twice. A true actual-cost balance
-requires that reconciliation and real receipts. Live contributions remain off
-until Stripe activation and a real payment readback are completed.
+requires that reconciliation and real receipts. Live contributions were activated
+on October 28 with the owner's authorization to accept support while bank payouts
+are paused. A genuine paid contribution and its fee/pool readback remain unverified;
+see [LAUNCH_STATUS.md](LAUNCH_STATUS.md).
 
 ## Read actual provider costs without changing the budget
 
@@ -73,6 +75,12 @@ claim of fully reconciled community funding.
 - Record only Quran Reader's attributable costs. Do not charge the entire Nurra site's costs to this pool unless that allocation is explicitly agreed.
 
 ## Record an additional cost
+
+Run budget tools with the same `QO_STATE_DIR`, `QO_SPONSOR_CENTS_PER_HOUR`
+and `QO_OPERATING_RESERVE_CENTS` as the hosted reader. Both manual funding and
+expense reports subtract the configured reserve from available listening time.
+`pool:add` accepts hours, not dollars, and records a bookkeeping allocation; it
+does not transfer cash or top up a speech/AI provider account.
 
 Use the service's actual `QO_STATE_DIR` and matching conversion rate. USD supports up to six decimal places; values are persisted as integer microdollars. The command records an accounting entry; it does not transfer money.
 

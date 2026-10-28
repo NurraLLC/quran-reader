@@ -14,6 +14,7 @@ const micros = Number(whole) * 1_000_000 + Number(fraction.padEnd(6, '0'));
 const store = new CreditStore(path.join(process.env.QO_STATE_DIR || path.join(ROOT, 'data', 'state'), 'credits.db'), {
   freeSecondsPerMonth: 0, ipDailyFreeSeconds: 0, globalDailyFreeSeconds: 0, holdMinSeconds: 20, holdMaxSeconds: 1200,
   costCentsPerHour: parseDonations(process.env.QO_DONATIONS, process.env.QO_SPONSOR_CENTS_PER_HOUR).centsPerHour,
+  operatingReserveUsdMicros: Number(process.env.QO_OPERATING_RESERVE_CENTS ?? 0) * 10_000,
 });
 try {
   const changed = store.recordCost(id, category as 'hosting' | 'payment_fees' | 'ai' | 'other', micros);
