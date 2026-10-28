@@ -1,6 +1,33 @@
 # Launch status — 2026-10-28
 
-## Latest: support graph, prompt confirmation, rotated credentials and return navigation
+## Latest: separate listening and fees; payments and payouts active
+
+Owner-approved display correction `4ae2fdd` is live as
+`quran-reader:4ae2fdd`, immutable image
+`sha256:f14901be2dbfad35460dd14a6ddd2f17550479b4f3414faf99a385507334867b`.
+The ring and legend separate listening from fees/costs; costs display in dollars.
+Live browser readback showed 1h 52m listening used and $0.45 fees/costs, with
+63h 53m available. Opening and closing support details retained those values.
+
+- The owner's real $5 contribution was committed on October 28. Read-only ledger
+  inspection confirmed 500 cents funded and a 45-cent actual payment fee, adding
+  approximately 35 available listening hours after fees. No donor identity or
+  payment credential is included in this record.
+- The Stripe Dashboard account-status page showed Payments and Payouts Active
+  and no active verification tasks. This supersedes the earlier payout-review
+  limitation below. An actual bank payout receipt remains unverified.
+- TypeScript checking, Windows and Linux frontend builds, secret history scan
+  (1,051 file versions), Caddy configuration validation, and an isolated
+  container's health/authenticated-cookie/synthetic 3,600-second pool readback
+  passed. The test used disposable state and no production payment credentials.
+  Its alternate loopback port required the application's expected Host header.
+- The release switched with zero open listening holds. Production pool totals
+  were identical across the switch, current protected credentials were retained,
+  live contribution checkout remained enabled, and the content-refresh timer
+  remained active. The prior `b275ae2` image and a private state backup are
+  retained for rollback. No new microphone or OBS proof is claimed.
+
+## Previous: support graph, prompt confirmation, rotated credentials and return navigation
 
 Live application revision `b275ae2` (building on support/backend revision
 `f95dabc`) is running as `quran-reader:b275ae2`, immutable image
