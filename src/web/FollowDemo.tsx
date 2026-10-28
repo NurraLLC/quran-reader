@@ -95,7 +95,7 @@ export function FollowDemo() {
   const last = ayahs[ayahs.length - 1];
 
   return (
-    <figure ref={root} className="r-demo" aria-labelledby="r-demo-caption" data-playing={playing || undefined}>
+    <figure ref={root} className="r-demo" aria-label={`Example, not live listening: ${surah.name} ${first.key}–${last.ayah}`} data-playing={playing || undefined}>
       <div className="r-demo-top">
         <span className="r-demo-badge">Example</span>
         <span className="r-demo-where" aria-hidden="true">{surah.name} {ayahs[step.a].key}</span>
@@ -132,9 +132,7 @@ export function FollowDemo() {
         <button type="button" onClick={() => show((i + 1) % steps.length)}>Next word</button>
       </div>
       <p className="r-sr-only" aria-live="polite">{said}</p>
-      <figcaption id="r-demo-caption" className="r-demo-caption">
-        An example, not live listening ({surah.name} {first.key}–{last.ayah}). Word meanings follow Arabic order; the sentence translation stays below.{surah.glossCredit ? ` ${surah.glossCredit}.` : ''}
-      </figcaption>
+      {surah.glossCredit && <figcaption id="r-demo-caption" className="r-demo-caption">{surah.glossCredit}</figcaption>}
     </figure>
   );
 }

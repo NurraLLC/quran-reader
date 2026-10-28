@@ -291,9 +291,14 @@ export function Control() {
     next?.click();
   };
 
+  const backToReader = <a className="control-back" href={u('/')} onClick={(event) => {
+    if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey) captureRef.current?.stop();
+  }}><span aria-hidden="true">←</span> Back to reader</a>;
+
   if (auth === 'unauthorized') {
     return (
       <main className="gate">
+        {backToReader}
         {mode === 'local' ? (
           <>
             <h1>Open the private control link</h1>
@@ -316,7 +321,7 @@ export function Control() {
   }
   if (!snap) {
     const down = mode === 'local' ? 'The overlay server is not reachable. Is it still running?' : 'The server can’t be reached right now. This page keeps trying.';
-    return <main className="gate"><p>{auth === 'checking' ? 'Opening…' : conn === 'closed' ? down : 'Connecting…'}</p></main>;
+    return <main className="gate">{backToReader}<p>{auth === 'checking' ? 'Opening…' : conn === 'closed' ? down : 'Connecting…'}</p></main>;
   }
 
   const st = statusLine(snap);
@@ -334,7 +339,7 @@ export function Control() {
   return (
     <div className="control" onKeyDown={onRadioKeys}>
       <header className="topbar">
-        <div className="brand">Quran Reader<span className="brand-sub"> · Stream controls</span></div>
+        <div className="control-identity">{backToReader}<div className="brand">Quran Reader<span className="brand-sub"> · Stream controls</span></div></div>
         <div className={`status status-${st.tone}`} role="status" aria-live="polite">
           <span className="dot" aria-hidden />
           <div>
