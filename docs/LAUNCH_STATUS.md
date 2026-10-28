@@ -1,5 +1,72 @@
 # Launch status — 2026-10-28
 
+## Latest: support graph, prompt confirmation, rotated credentials and return navigation
+
+Live application revision `b275ae2` (building on support/backend revision
+`f95dabc`) is running as `quran-reader:b275ae2`, immutable image
+`sha256:1ef53000438d0627027db11eaeb66690ca29a16bcc649051fd0cf60132c7b48a`.
+
+- The compact community card shows a proportional available/reserved/used ring.
+  Details, accounting assumptions and one-time LLC support disclosures expand
+  on request. Contribution quotes and Stripe Checkout share the same estimate:
+  approximately 35/72/184 additional hours for $5/$10/$25 at the current positive
+  balance, after estimated domestic-card fees. Existing shortfalls are covered
+  first; future bills can reduce capacity. Actual Stripe fees still own ledger
+  accounting. The previously corrected operator scripts are now installed.
+- Paid contributions add hours before bank payout. The return page checks the
+  committed receipt every two seconds, with bounded retries, and refreshes the
+  shared balance after confirmation. Pending/forged return URLs add nothing.
+  Payout holds do not gate confirmed funding; the owner can front provider bills.
+- Stream controls now have a visible Back to reader link, including their
+  loading/error states. Ordinary navigation closes this page's capture and
+  returns to the base-path-aware reader; modified clicks retain normal browser
+  behavior. Local rendered navigation retained the selected Al-Fatihah 1:1.
+- The example keeps its Example badge and concise accessible identity. Its
+  visible caption now contains only the Quran Foundation source credit.
+- A separate design agent inspected desktop, narrow CSS widths of 387/318px,
+  paper/night themes, keyboard operation, empty funding and funding shortfall.
+  The closed card measured 544 by 190px with 18 visible words. Parent inspected
+  local return navigation and live rendered reader/caption. These are browser
+  observations, not physical-device or microphone acceptance.
+- Thirteen focused payment/budget tests, TypeScript checking and the Linux
+  frontend build passed. The final public API check created a $5 live checkout,
+  verified the return receipt configuration and pending status, then expired it
+  unpaid. The pool stayed unchanged. No real contribution or Stripe-originated
+  paid-event/actual-fee readback was performed.
+- With explicit owner approval, created a restricted reader Soniox key for
+  realtime recognition, temporary keys and usage/limits. Installed it and the
+  rotated production Quran Foundation secret in protected production settings.
+  Soniox temporary-key minting returned 201; Quran Foundation token issuance
+  returned 200 and its chapter endpoint returned 114 chapters. Old Soniox and
+  Quran Foundation credentials both subsequently returned 401. The old reader
+  key was named Quran Reader Prod inside Soniox's Moard project; only that key
+  was revoked. The separate MoardDEVCLOSE key was untouched. Reader recognition
+  now uses the previously empty separate project, so historical provider costs
+  must retain their original project attribution when reconciling invoices.
+- No direct Typesafe key is configured in production; JEV uses the existing
+  OpenRouter key and its $5 non-resetting cap. No OpenRouter rotation was needed
+  for the diagnostic exposure. Private local production settings were updated
+  and protected; temporary credential staging was deleted. No secret value is
+  recorded in this document or release source.
+- The public GitHub repository's fetched history passed scanning of 1,048 file
+  versions against five local secret values and twelve formats, including
+  Soniox and Quran Foundation. GitHub returned zero secret-scanning alerts.
+  The manual CI test job now fetches full history and runs this scan. This is
+  bounded scanner evidence, not a guarantee about all possible sensitive data.
+- Each switch checked zero open listening holds and preserved the shared pool.
+  One navigation-release public probe timed out and triggered rollback while
+  retaining the rotated credentials; the retry passed private and public checks.
+  Latest retained container: `quran-reader-before-support-20261028T125711Z`;
+  backup: `/opt/quran-reader-backups/support-release-20261028T125711Z`.
+  Roll back using the retained application image with the current protected
+  environment, rather than restoring revoked credentials from older backups.
+  The content-refresh timer remains active.
+
+Stripe bank payouts are still subject to its review. A genuine paid contribution,
+actual fee/pool readback, bank payout and fully reconciled hosting/provider
+invoices remain unverified. No new microphone, replay or rendered OBS acceptance
+was performed during this release.
+
 ## Current update: live Quran Reader contributions
 
 The owner authorized accepting contributions while Stripe holds bank payouts
