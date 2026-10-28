@@ -833,7 +833,7 @@ a.about-ref:hover { text-decoration: underline; }
 .r-give .r-give-legend, .r-give .r-give-first { margin-left: auto !important; margin-right: auto !important; text-align: center; }
 
 /* Community listening: a proportional balance ring, with the explanation one tap away. */
-.r-pool { --pool-reserve: #68a7a2; --pool-reserve-soft: #214448; --pool-spent: #52666b;
+.r-pool { --pool-reserve: #68a7a2; --pool-reserve-soft: #214448; --pool-spent: #52666b; --pool-costs: #aa8c70;
   margin: 28px auto 0; max-width: 34rem; border: 1px solid var(--line); border-radius: 22px; background: var(--ink-1); text-align: left; overflow: hidden; }
 .r-pool.open { border-color: var(--gold-dim); }
 .r-pool-overview { display: grid; grid-template-columns: 148px minmax(0, 1fr); align-items: center; gap: 26px; padding: 20px 24px 20px 18px; }
@@ -844,6 +844,7 @@ a.about-ref:hover { text-decoration: underline; }
 .r-pool-ring { transform: rotate(-90deg); transform-origin: 80px 80px; }
 .r-pool-ring.available { stroke: var(--gold); }
 .r-pool-ring.spent { stroke: var(--pool-spent); }
+.r-pool-ring.costs { stroke: var(--pool-costs); }
 .r-pool-graph-value { position: absolute; inset: 24px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-align: center; font-variant-numeric: tabular-nums; }
 .r-pool-graph-value strong { font: 650 36px/1 var(--ui); letter-spacing: -.055em; color: var(--gold); }
 .r-pool-graph-value > span { font: 450 11px/1.25 var(--ui); color: var(--text); white-space: nowrap; }
@@ -856,6 +857,7 @@ a.about-ref:hover { text-decoration: underline; }
 .r-pool-key dt { display: flex; align-items: center; gap: 7px; color: var(--muted); }
 .r-pool-key dt::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--pool-spent); }
 .r-pool-key .reserve dt::before { background: repeating-linear-gradient(135deg, var(--pool-reserve), var(--pool-reserve) 1px, var(--pool-reserve-soft) 1px, var(--pool-reserve-soft) 3px); }
+.r-pool-key .costs dt::before { background: var(--pool-costs); }
 .r-pool-key dd { margin: 0; color: var(--text); }
 .r-pool-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; padding: 9px 13px; border: 1px solid var(--gold-dim); border-radius: 11px; background: transparent; color: var(--gold); font: 650 13px/1.2 var(--ui); text-align: left; }
 .r-pool-toggle > span { font-size: 19px; font-weight: 400; line-height: 1; }
@@ -879,7 +881,7 @@ a.about-ref:hover { text-decoration: underline; }
 .r-pool .r-pool-legal { margin: 14px 0 0 !important; max-width: none; color: var(--muted); font: 400 11.5px/1.5 var(--ui); }
 .r-pool .r-give-more { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; text-align: left; font-size: 12px; }
 .r-time .r-pool { margin: 14px 0 16px; }
-html[data-reader-theme='paper'] .r-pool { --pool-reserve: #617d73; --pool-reserve-soft: #d7dfd2; --pool-spent: #b2b6a9; }
+html[data-reader-theme='paper'] .r-pool { --pool-reserve: #617d73; --pool-reserve-soft: #d7dfd2; --pool-spent: #b2b6a9; --pool-costs: #916c4b; }
 @media (max-width: 420px) {
   .r-pool-overview { grid-template-columns: 126px minmax(0, 1fr); gap: 15px; padding: 17px 17px 17px 12px; }
   .r-pool-graph-value { inset: 20px 10px; }

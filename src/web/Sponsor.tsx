@@ -20,24 +20,28 @@ export async function openDonation(amountCents: number): Promise<string | null> 
 const price = (p: string) => p.replace(/\.00$/, '');
 const duration = (seconds: number) => seconds === 0 ? '0 h' : `${seconds < 0 ? '−' : ''}${formatListening(Math.abs(seconds))}`;
 const shortDuration = (seconds: number) => duration(seconds).replace(/ h/g, 'h').replace(/ min/g, 'm');
+const recordedCosts = (stats: PoolStats) => `$${((stats.costUsdMicros ?? 0) / 1_000_000).toFixed(2)}`;
 
 /** A balance composition, never a made-up usage history. Unfunded reserves don't fill the ring. */
 function PoolGraph({ stats }: { stats: PoolStats }) {
   const pattern = `pool-reserve-${useId().replace(/:/g, '')}`;
   const funded = Math.max(0, stats.given);
-  const spent = Math.max(0, stats.used + (stats.costs ?? 0));
+  const listening = Math.max(0, stats.used);
+  const costs = Math.max(0, stats.costs ?? 0);
+  const spent = listening + costs;
   const reserve = Math.max(0, stats.operatingReserve ?? 0);
   const parts = [
     { kind: 'available', seconds: Math.max(0, Math.min(stats.left, funded)) },
     { kind: 'reserve', seconds: Math.min(reserve, Math.max(0, funded - spent)) },
-    { kind: 'spent', seconds: Math.min(spent, funded) },
+    { kind: 'spent', seconds: Math.min(listening, funded) },
+    { kind: 'costs', seconds: Math.min(costs, Math.max(0, funded - listening)) },
   ];
   const minutes = Math.floor(Math.abs(stats.left) / 60);
   const hours = Math.floor(minutes / 60);
   const value = hours > 0 ? `${hours}h` : minutes > 0 ? `${minutes}m` : stats.left !== 0 ? '<1m' : '0h';
   let offset = 0;
   return (
-    <div className="r-pool-graph" role="img" aria-label={`${duration(stats.left)} ${stats.left < 0 ? 'funding shortfall' : 'available for listening'}. ${duration(stats.given)} funded; ${duration(reserve)} operating reserve${stats.left < 0 ? ' target' : ''}; ${duration(spent)} used for listening and recorded costs.`}>
+    <div className="r-pool-graph" role="img" aria-label={`${duration(stats.left)} ${stats.left < 0 ? 'funding shortfall' : 'available for listening'}. ${duration(stats.given)} funded; ${duration(reserve)} operating reserve${stats.left < 0 ? ' target' : ''}; ${duration(listening)} listening used; ${recordedCosts(stats)} fees and costs.`}>
       <svg viewBox="0 0 160 160" aria-hidden="true">
         <defs>
           <pattern id={pattern} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
@@ -105,7 +109,8 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
           <p className="r-pool-funded"><strong>{shortDuration(stats.given)}</strong> funded</p>
           <dl className="r-pool-key">
             {!!stats.operatingReserve && <div className="reserve"><dt>{stats.left < 0 ? 'Reserve target' : 'Reserved'}</dt><dd>{shortDuration(stats.operatingReserve)}</dd></div>}
-            <div className="spent"><dt>Used</dt><dd>{shortDuration(stats.used + (stats.costs ?? 0))}</dd></div>
+            <div className="spent"><dt>Listening used</dt><dd>{shortDuration(stats.used)}</dd></div>
+            <div className="costs"><dt>Fees &amp; costs</dt><dd>{recordedCosts(stats)}</dd></div>
           </dl>
           <button className="r-pool-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((o) => !o)}>
             {open ? 'Close details' : 'Support reader'}<span aria-hidden="true">{open ? '−' : '+'}</span>
@@ -139,9 +144,10 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
             <p>Shared hours = funding − listening − recorded costs − operating reserve. These are budget estimates, not a live cash balance.</p>
             <dl>
               <div><dt>Listening used</dt><dd>{duration(stats.used)}</dd></div>
-              <div><dt>Recorded costs</dt><dd>{duration(stats.costs ?? 0)}</dd></div>
+              <div><dt>Fees &amp; costs</dt><dd>{recordedCosts(stats)}</dd></div>
               {!!stats.operatingReserve && <div><dt>Operating reserve</dt><dd>${((stats.operatingReserveUsdMicros ?? 0) / 1_000_000).toFixed(2)} · not spent</dd></div>}
             </dl>
+            <p>Fees and costs reduce the available budget; they do not count as listening used.</p>
             <p>Contribution estimates use domestic card fees of 2.9% + 30¢ and cover any current funding shortfall first. Other payment methods can differ. Actual Stripe fees are recorded after payment.</p>
             <p>Future hosting and AI bills may reduce these hours. Listening uses a ${( (stats.centsPerHour ?? 13) / 100).toFixed(2)} hourly conversion while recognition is connected, including short pauses. Hosting continues between sessions. Totals refresh every minute.</p>
           </details>
