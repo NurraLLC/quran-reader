@@ -1,6 +1,50 @@
-# Launch status — 2026-10-24
+# Launch status — 2026-10-28
 
-## Current update: public reader access recovery
+## Current update: live Quran Reader contributions
+
+The owner authorized accepting contributions while Stripe holds bank payouts
+during its business review. The submitted Quran Reader description is in review,
+with completion estimated for October 29; this is not an approval guarantee.
+The business payout account is saved. Public contribution checkout is now on at
+https://nurra.org/quran-reader/ for the existing $5, $10 and $25 options.
+
+- The owner created a restricted live key: Checkout Sessions write; Balance,
+  Charges and Refunds, and Payment Intents read. It cannot issue refunds or
+  payouts. That key and the live webhook signing secret were installed only in
+  the private production environment. The live webhook listens for
+  `checkout.session.completed` and `checkout.session.async_payment_succeeded`.
+- This was a configuration change using the existing `quran-reader:2fd1064`
+  image and content/state volumes, not an application release or Sites update.
+  Zero open listening holds were observed before each switch. Private config,
+  container and state backups were retained. The first switch rolled back after
+  an automated public probe received HTTP 403; the corrected request passed and
+  the second activation completed. The final pool matched before and after:
+  276,923 funded seconds, 6,619 used, 104,150 available, 166,154 reserved and zero
+  additional recorded costs. This remains an estimate, not reconciled cash.
+- Live Stripe authentication and read access passed. The deployed billing code
+  created an unpaid live checkout, which was immediately expired. A separate
+  checkout through the public donation route also opened successfully and was
+  expired unpaid. Neither check moved money or credited the pool.
+- The public webhook accepted a locally signed no-op probe with HTTP 200 and
+  rejected the tampered payload with HTTP 400. This verifies the deployed route
+  and signing secret; it is not Stripe-originated paid-event delivery proof.
+  The pool remained unchanged during these checks.
+- Eleven focused local payment/project-cost tests passed. The relevant payment
+  source matches the deployed revision. Public browser readback showed enabled
+  $5/$10/$25 controls, the voluntary one-time project-support notice, and the
+  existing estimated-hour and running-cost explanations.
+- Rollback container: `quran-reader-prestripe-20261028T120220Z`. The matching
+  private backup is under `/opt/quran-reader-backups/stripe-activation-20261028T120220Z`.
+  The content-refresh timer remains active.
+
+A real paid contribution, its actual-fee ledger readback, Stripe-originated
+paid-event delivery and eventual bank payout are still unverified. Payouts
+remain paused by Stripe. Provider/hosting invoice reconciliation and refund or
+dispute adjustments remain operator work, as described in
+[PROJECT_BUDGET.md](PROJECT_BUDGET.md). No microphone, speech-provider, replay or
+native OBS acceptance was performed for this payment configuration change.
+
+## Previous update: public reader access recovery
 
 The public reader now runs `quran-reader:2fd1064`, revision
 `2fd106494c8266e0fee2cbb045c1109693752db5`, image
