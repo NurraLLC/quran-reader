@@ -92,16 +92,16 @@ describe('sponsoring listening for others', () => {
     JSON.stringify({
       id: 'evt_d1',
       type: 'checkout.session.completed',
-      data: { object: { id: 'cs_donation_1', payment_status: 'paid', client_reference_id: 'x', metadata: { kind: 'donation', amount: '1000' }, amount_total: 1000, currency: 'usd', ...over } },
+      data: { object: { id: 'cs_test_donation_1', payment_status: 'paid', client_reference_id: 'x', metadata: { kind: 'donation', amount: '1000' }, amount_total: 1000, currency: 'usd', ...over } },
     });
 
   it('offers donations and opens a checkout that is a gift, not a purchase', async () => {
     const v = await me();
     const offered = (v.body.billing as unknown as { donations: Donation[] }).donations;
     expect(offered).toEqual([
-      { amountCents: 500, price: '$5.00', hours: 38 },
-      { amountCents: 1000, price: '$10.00', hours: 76 },
-      { amountCents: 2500, price: '$25.00', hours: 192 },
+      { amountCents: 500, price: '$5.00', hours: 35 },
+      { amountCents: 1000, price: '$10.00', hours: 72 },
+      { amountCents: 2500, price: '$25.00', hours: 184 },
     ]);
     const post = (amountCents: number) => fetch(`${base}/api/billing/donate`, { method: 'POST', headers: { origin, cookie: v.cookie, 'content-type': 'application/json' }, body: JSON.stringify({ amountCents }) });
     expect((await post(123)).status).toBe(400);
@@ -110,14 +110,20 @@ describe('sponsoring listening for others', () => {
     expect(call.body.get('metadata[kind]')).toBe('donation');
     expect(call.body.get('line_items[0][price_data][unit_amount]')).toBe('1000');
     expect(call.body.get('metadata[pack]')).toBeNull();
+    expect(call.body.get('success_url')).toBe(`${origin}/?donated=1&session_id={CHECKOUT_SESSION_ID}`);
+    expect(call.body.get('line_items[0][price_data][product_data][description]')).toContain('About 72 shared listening hours after estimated card fees and current costs');
   });
 
   it('fills the shared pool once per payment, and nothing for tampered amounts', async () => {
+    const visitor = await me();
+    const receipt = () => fetch(`${base}/api/billing/contribution/cs_test_donation_1`, { headers: { cookie: visitor.cookie } }).then((r) => r.json());
+    expect(await receipt()).toEqual({ confirmed: false });
     const before = (await me()).body.credits.pool;
     expect((await webhook(donationEvent({ amount_total: 100, id: 'cs_cheap_gift' }))).status).toBe(200);
     expect((await webhook(donationEvent({ metadata: { kind: 'donation', amount: '777' }, amount_total: 777, id: 'cs_odd' }))).status).toBe(200);
     expect((await me()).body.credits.pool).toBe(before);
     expect((await webhook(donationEvent())).status).toBe(200);
+    expect(await receipt()).toEqual({ confirmed: true });
     expect((await webhook(donationEvent())).status).toBe(200); // a retried delivery adds nothing
     expect((await me()).body.credits.pool).toBe(before + Math.floor(1000 * 3600 / 13) - Math.ceil(59 * 3600 / 13));
   });
@@ -128,8 +134,10 @@ describe('sponsoring listening for others', () => {
     feeUnavailable = true;
     try { expect((await webhook(payload)).status).toBe(503); }
     finally { feeUnavailable = false; }
+    expect(credits.contributionConfirmed('cs_retry')).toBe(false);
     expect(credits.poolStats()).toEqual(before);
     expect((await webhook(payload)).status).toBe(200);
+    expect(credits.contributionConfirmed('cs_retry')).toBe(true);
     const after = credits.poolStats();
     expect(after.given - before.given).toBe(Math.floor(1000 * 3600 / 13));
     expect(after.costUsdMicros - before.costUsdMicros).toBe(590_000);

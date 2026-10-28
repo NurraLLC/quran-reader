@@ -45,6 +45,8 @@ function secretValues() {
 }
 
 const FORMATS = [
+  ['a Soniox key', /\bsnx_(?:proj|org)_[A-Za-z0-9._-]{24,}/],
+  ['a Quran Foundation client secret', /\bqfcs_[A-Za-z0-9_-]{24,}/],
   ['a Stripe secret key', /\b[rs]k_(live|test)_[0-9A-Za-z]{16,}/],
   ['a Stripe webhook secret', /\bwhsec_[0-9A-Za-z]{16,}/],
   ['an OpenRouter key', /\bsk-or-v1-[0-9a-f]{32,}/],

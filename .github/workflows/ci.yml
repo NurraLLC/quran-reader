@@ -21,10 +21,13 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
+      - run: npm run secrets:check
       - run: npm ci
       # The corpus is not in the repository: fetch it (hash-verified) once per source pin, then reuse.
       - uses: actions/cache@v4

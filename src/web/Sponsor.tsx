@@ -1,8 +1,9 @@
 // Lifetime community funding: total given, time used and time left. No monthly target,
 // donor names, personal purchases or leaderboard. Optional donations add to everyone's time.
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { Donation, PoolStats } from './net';
 import { formatListening, u } from './net';
+import { estimateSupportHours } from '../shared/support-budget';
 
 /** Opens Stripe's page for a gift; returns an error to show if it could not. */
 export async function openDonation(amountCents: number): Promise<string | null> {
@@ -18,6 +19,47 @@ export async function openDonation(amountCents: number): Promise<string | null> 
 /** "$10.00" reads as "$10". */
 const price = (p: string) => p.replace(/\.00$/, '');
 const duration = (seconds: number) => seconds === 0 ? '0 h' : `${seconds < 0 ? '−' : ''}${formatListening(Math.abs(seconds))}`;
+const shortDuration = (seconds: number) => duration(seconds).replace(/ h/g, 'h').replace(/ min/g, 'm');
+
+/** A balance composition, never a made-up usage history. Unfunded reserves don't fill the ring. */
+function PoolGraph({ stats }: { stats: PoolStats }) {
+  const pattern = `pool-reserve-${useId().replace(/:/g, '')}`;
+  const funded = Math.max(0, stats.given);
+  const spent = Math.max(0, stats.used + (stats.costs ?? 0));
+  const reserve = Math.max(0, stats.operatingReserve ?? 0);
+  const parts = [
+    { kind: 'available', seconds: Math.max(0, Math.min(stats.left, funded)) },
+    { kind: 'reserve', seconds: Math.min(reserve, Math.max(0, funded - spent)) },
+    { kind: 'spent', seconds: Math.min(spent, funded) },
+  ];
+  const minutes = Math.floor(Math.abs(stats.left) / 60);
+  const hours = Math.floor(minutes / 60);
+  const value = hours > 0 ? `${hours}h` : minutes > 0 ? `${minutes}m` : stats.left !== 0 ? '<1m' : '0h';
+  let offset = 0;
+  return (
+    <div className="r-pool-graph" role="img" aria-label={`${duration(stats.left)} ${stats.left < 0 ? 'funding shortfall' : 'available for listening'}. ${duration(stats.given)} funded; ${duration(reserve)} operating reserve${stats.left < 0 ? ' target' : ''}; ${duration(spent)} used for listening and recorded costs.`}>
+      <svg viewBox="0 0 160 160" aria-hidden="true">
+        <defs>
+          <pattern id={pattern} width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width="5" height="5" fill="var(--pool-reserve-soft)" />
+            <path d="M 0 0 V 5" stroke="var(--pool-reserve)" strokeWidth="2" />
+          </pattern>
+        </defs>
+        <circle className="r-pool-ring-base" cx="80" cy="80" r="66" />
+        {parts.map(({ kind, seconds }) => {
+          const percent = funded > 0 ? seconds / funded * 100 : 0;
+          const start = offset;
+          offset += percent;
+          return percent > 0 ? <circle key={kind} className={`r-pool-ring ${kind}`} cx="80" cy="80" r="66" pathLength="100" strokeDasharray={`${Math.max(0, percent - Math.min(0.8, percent / 8))} 100`} strokeDashoffset={-start} style={kind === 'reserve' ? { stroke: `url(#${pattern})` } : undefined} /> : null;
+        })}
+      </svg>
+      <div className="r-pool-graph-value" aria-hidden="true">
+        <strong>{value}</strong>
+        <span>{hours > 0 && minutes % 60 > 0 ? `${minutes % 60}m · ` : ''}{stats.left < 0 ? 'needed' : 'available'}</span>
+      </div>
+    </div>
+  );
+}
 
 /** Live pool numbers: the initial ones, refreshed every minute while the page is visible. */
 function useLivePool(initial: PoolStats | undefined): PoolStats | undefined {
@@ -43,8 +85,8 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
   const [open, setOpen] = useState(defaultOpen);
   const [busy, setBusy] = useState<number | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const bodyId = useId();
   if (!stats) return null;
-  const pct = stats.given > 0 ? Math.min(100, Math.max(0, (stats.left / stats.given) * 100)) : 0;
   const give = async (c: number) => {
     setBusy(c);
     setNote(null);
@@ -54,61 +96,58 @@ export function SharedHours({ stats: initial, donations, testMode = false, defau
       setNote(err);
     }
   };
-  const example = donations[Math.min(1, donations.length - 1)];
-
   return (
     <section className={`r-pool${open ? ' open' : ''}`} aria-label="Sponsored recitation hours">
       <div className="r-pool-overview">
-        <p className="r-pool-title">Community support keeps recitation free.</p>
-        <dl className="r-pool-totals">
-          <div><dt>Community funded</dt><dd>{duration(stats.given)}</dd></div>
-          <div><dt>Listening & costs</dt><dd>{duration(stats.used + (stats.costs ?? 0))}</dd></div>
-          <div><dt>{stats.operatingReserve ? 'Available for listening' : 'Hours remaining'}</dt><dd>{duration(stats.left)}</dd></div>
-        </dl>
+        <PoolGraph stats={stats} />
+        <div className="r-pool-summary">
+          <p className="r-pool-title">Community powered</p>
+          <p className="r-pool-funded"><strong>{shortDuration(stats.given)}</strong> funded</p>
+          <dl className="r-pool-key">
+            {!!stats.operatingReserve && <div className="reserve"><dt>{stats.left < 0 ? 'Reserve target' : 'Reserved'}</dt><dd>{shortDuration(stats.operatingReserve)}</dd></div>}
+            <div className="spent"><dt>Used</dt><dd>{shortDuration(stats.used + (stats.costs ?? 0))}</dd></div>
+          </dl>
+          <button className="r-pool-toggle" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((o) => !o)}>
+            {open ? 'Close details' : 'Support reader'}<span aria-hidden="true">{open ? '−' : '+'}</span>
+          </button>
+        </div>
       </div>
-      <p className="r-budget-note">{duration(stats.used)} used for listening · {duration(stats.costs ?? 0)} in other recorded costs</p>
-      <p className="r-budget-note">Hours are a budget estimate. Community support covers Quran Reader’s own running costs.</p>
-      {!!stats.operatingReserve && <p className="r-budget-note">${((stats.operatingReserveUsdMicros ?? 0) / 1_000_000).toFixed(2)} set aside for running costs ({duration(stats.operatingReserve)}). This is reserved, not spent.</p>}
-      <button className="r-pool-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <span className="r-pool-line">
-          <span className="r-pool-now">Shared by everyone</span>
-          <span className="r-pool-cta">{open ? 'Close details' : 'Support Quran Reader'}</span>
-        </span>
-        <span className="r-pool-track" aria-hidden="true">
-          <span style={{ width: `${pct}%` }} />
-        </span>
-      </button>
-      {open && (
-        <div className="r-pool-body">
-          <p className="r-pool-why">
-            Support this reader’s hosting, voice recognition, AI requests and payment fees. Hosting continues even when nobody is listening. The hour conversion is not a guaranteed total cost per hour.
-            {example ? ` ${price(example.price)} represents about ${example.hours} hours before fees and project costs.` : ''}
-          </p>
-          <p className="r-pool-sub">One-time support for Quran Reader, operated by Nurra LLC. No subscription or reader account. Contributions are not tax-deductible charitable donations.</p>
+        <div className="r-pool-body" id={bodyId} hidden={!open}>
+          <h3>Keep recitation free.</h3>
           {donations.length > 0 && (
             <>
-            {testMode && <p className="r-support-status" role="status">Test checkout — no real money. Use Stripe test details only. These hours belong to the test pool.</p>}
+            {testMode && <p className="r-support-status" role="status">Test checkout — no real money. Use Stripe test details only.</p>}
             <div className="r-give-amounts">
-              {donations.map((d) => (
+              {donations.map((d) => {
+                const hours = estimateSupportHours(d.amountCents, stats.centsPerHour ?? 13, stats.left);
+                return (
                 <button key={d.amountCents} disabled={busy !== null} onClick={() => void give(d.amountCents)}>
                   <strong>{busy === d.amountCents ? 'Opening…' : price(d.price)}</strong>
-                  <span>About {d.hours} hours before costs</span>
+                  <span>{hours > 0 ? `≈ ${hours}h added` : 'Covers costs'}</span>
                 </button>
-              ))}
+                );
+              })}
             </div>
+            <p className="r-pool-estimate">After estimated card fees + current costs.</p>
+            <p className="r-pool-checkout">One-time support · Secure checkout with Stripe</p>
             </>
           )}
-          {!donations.length && <p className="r-support-status" role="status">Online contributions aren’t open yet. We’re setting up payments. You can already use the reader and share it with others.</p>}
-          {donations.length > 0 && <p className="r-pool-sub">Choose an amount to continue to Stripe’s secure checkout.</p>}
+          {!donations.length && <p className="r-support-status" role="status">Contributions are opening soon. Reading and sharing are always free.</p>}
           {note && <p className="r-note" role="alert">{note}</p>}
-          <p className="r-pool-sub">Time counts while recognition is connected, including short pauses. Usage is added when a session ends; totals refresh every minute.</p>
-          <p className="r-pool-sub">Available hours = funded hours − listening used − recorded costs − operating reserve. When two people each use one shared hour, two hours leave the pool.</p>
-          <p className="r-pool-sub">Conversion: ${( (stats.centsPerHour ?? 13) / 100).toFixed(2)} per hour equivalent. Listening is estimated from connected time. Other costs reduce the balance when recorded; this is not a live provider invoice.</p>
-          <a className="r-give-more" href={u('/about')}>
-            Why support this project?
-          </a>
+          <details className="r-pool-accounting">
+            <summary>How hours are estimated</summary>
+            <p>Shared hours = funding − listening − recorded costs − operating reserve. These are budget estimates, not a live cash balance.</p>
+            <dl>
+              <div><dt>Listening used</dt><dd>{duration(stats.used)}</dd></div>
+              <div><dt>Recorded costs</dt><dd>{duration(stats.costs ?? 0)}</dd></div>
+              {!!stats.operatingReserve && <div><dt>Operating reserve</dt><dd>${((stats.operatingReserveUsdMicros ?? 0) / 1_000_000).toFixed(2)} · not spent</dd></div>}
+            </dl>
+            <p>Contribution estimates use domestic card fees of 2.9% + 30¢ and cover any current funding shortfall first. Other payment methods can differ. Actual Stripe fees are recorded after payment.</p>
+            <p>Future hosting and AI bills may reduce these hours. Listening uses a ${( (stats.centsPerHour ?? 13) / 100).toFixed(2)} hourly conversion while recognition is connected, including short pauses. Hosting continues between sessions. Totals refresh every minute.</p>
+          </details>
+          <p className="r-pool-legal">Support for Quran Reader, operated by Nurra LLC. Not a tax-deductible charitable donation.</p>
+          <a className="r-give-more" href={u('/about')}>Why support this project? <span aria-hidden="true">↗</span></a>
         </div>
-      )}
     </section>
   );
 }

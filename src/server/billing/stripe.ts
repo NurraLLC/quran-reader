@@ -2,6 +2,7 @@
 // to the shared pool exactly once. No personal purchases, accounts or subscriptions.
 
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { estimateSupportHours } from '../../shared/support-budget';
 
 /** Donation amounts and what each adds to the sponsored pool. */
 export type Donations = { amountsCents: number[]; currency: string; centsPerHour: number };
@@ -31,17 +32,17 @@ export class StripeBilling {
 
   get testMode(): boolean { return !/^(sk|rk)_live_/.test(this.secretKey); }
 
-  /** Hours of listening a donation adds to the sponsored pool. */
-  sponsoredHours(amountCents: number): number {
-    return Math.floor(amountCents / this.donations.centsPerHour);
+  /** Estimated spendable hours after card fees and the current pool shortfall. */
+  sponsoredHours(amountCents: number, availableSeconds = 0): number {
+    return estimateSupportHours(amountCents, this.donations.centsPerHour, availableSeconds);
   }
 
   /** A Stripe-hosted checkout page for a donation to the sponsored pool; returns its URL. */
-  async checkoutDonation(visitorId: string, amountCents: number, origin: string): Promise<string> {
+  async checkoutDonation(visitorId: string, amountCents: number, origin: string, availableSeconds = 0): Promise<string> {
     if (!this.donations.amountsCents.includes(amountCents)) throw new Error('unknown amount');
     const form = new URLSearchParams({
       mode: 'payment',
-      success_url: `${origin}/?donated=1`,
+      success_url: `${origin}/?donated=1&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/?canceled=1`,
       client_reference_id: visitorId,
       'metadata[kind]': 'donation',
@@ -50,7 +51,7 @@ export class StripeBilling {
       'line_items[0][price_data][currency]': this.donations.currency,
       'line_items[0][price_data][unit_amount]': String(amountCents),
       'line_items[0][price_data][product_data][name]': 'Support Quran Reader',
-      'line_items[0][price_data][product_data][description]': `One-time contribution to Nurra LLC. About ${this.sponsoredHours(amountCents)} hour equivalents before fees and project costs. Not a tax-deductible charitable donation.`,
+      'line_items[0][price_data][product_data][description]': `One-time contribution to Nurra LLC. About ${this.sponsoredHours(amountCents, availableSeconds)} shared listening hours after estimated card fees and current costs. Future reader bills may reduce hours. Not a tax-deductible charitable donation.`,
     });
     return this.createSession(form);
   }

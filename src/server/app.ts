@@ -334,7 +334,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
       billing: hosted.billing
         ? {
             testMode: hosted.billing.testMode,
-            donations: hosted.billing.donations.amountsCents.map((c) => ({ amountCents: c, price: formatPrice(c, hosted.billing!.donations.currency), hours: hosted.billing!.sponsoredHours(c) })),
+            donations: hosted.billing.donations.amountsCents.map((c) => ({ amountCents: c, price: formatPrice(c, hosted.billing!.donations.currency), hours: hosted.billing!.sponsoredHours(c, hosted.credits.poolSeconds()) })),
           }
         : null,
     };
@@ -344,6 +344,16 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
   app.get('/api/pool', async (_req, reply) => {
     if (!hosted) return reply.code(404).send({ error: 'not available' });
     return hosted.credits.poolStats();
+  });
+
+  // Opaque checkout ID is a status-only receipt: no donor identity or payment details.
+  // A return URL alone cannot grant hours; only the committed paid webhook can confirm it.
+  app.get<{ Params: { id: string } }>('/api/billing/contribution/:id', async (req, reply) => {
+    if (!hosted?.billing) return reply.code(404).send({ error: 'not available' });
+    if (!visitor(req)) return reply.code(401).send({ error: 'visitor' });
+    if (!/^cs_(live|test)_[A-Za-z0-9_]{1,200}$/.test(req.params.id)) return reply.code(400).send({ error: 'invalid receipt' });
+    reply.header('Cache-Control', 'no-store');
+    return { confirmed: hosted.credits.contributionConfirmed(req.params.id) };
   });
 
   // Sponsor listening for others: a Stripe-hosted checkout for a donation to the shared pool.
@@ -356,7 +366,7 @@ export async function buildApp(o: AppOptions): Promise<{ app: FastifyInstance; o
     const amount = Number((req.body as { amountCents?: unknown } | undefined)?.amountCents);
     if (!hosted.billing.donations.amountsCents.includes(amount)) return reply.code(400).send({ error: 'unknown amount' });
     try {
-      return { url: await hosted.billing.checkoutDonation(id, amount, `${hosted.publicOrigin ?? `http://${req.headers.host}`}${base}`) };
+      return { url: await hosted.billing.checkoutDonation(id, amount, `${hosted.publicOrigin ?? `http://${req.headers.host}`}${base}`, hosted.credits.poolSeconds()) };
     } catch {
       return reply.code(502).send({ error: 'The payment page could not be opened. Please try again.' });
     }

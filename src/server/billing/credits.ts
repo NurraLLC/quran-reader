@@ -202,6 +202,10 @@ export class CreditStore {
   /**
    * Lifetime community totals. No monthly targets, donor identities or leaderboards.
    */
+  contributionConfirmed(checkoutId: string): boolean {
+    return this.num('SELECT COUNT(*) AS n FROM pool_gifts WHERE id = ?', `stripe:${checkoutId}`) > 0;
+  }
+
   poolStats(now = Date.now()) {
     const costs = this.num('SELECT SUM(seconds) AS n FROM pool_costs');
     return {

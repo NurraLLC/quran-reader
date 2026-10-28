@@ -153,12 +153,46 @@ export function Reader() {
   const [timeOpen, setTimeOpen] = useState<false | 'time' | 'sponsor'>(false);
   // Back from Stripe's checkout page.
   const [donated, setDonated] = useState(() => new URLSearchParams(location.search).has('donated'));
+  const [contributionReceipt] = useState(() => new URLSearchParams(location.search).get('session_id'));
+  const [contributionConfirmed, setContributionConfirmed] = useState(false);
+  const [confirmationSlow, setConfirmationSlow] = useState(false);
   const showSupportThanks = donated && !!credits;
   useEffect(() => {
-    if (!showSupportThanks) return;
+    if (!showSupportThanks || (!contributionConfirmed && !confirmationSlow)) return;
     const timer = setTimeout(() => setDonated(false), 8000);
     return () => clearTimeout(timer);
-  }, [showSupportThanks]);
+  }, [showSupportThanks, contributionConfirmed, confirmationSlow]);
+  useEffect(() => {
+    if (!showSupportThanks) return;
+    if (!contributionReceipt || !/^cs_(live|test)_[A-Za-z0-9_]{1,200}$/.test(contributionReceipt)) {
+      setConfirmationSlow(true);
+      return;
+    }
+    let cancelled = false;
+    let attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const abort = new AbortController();
+    const poll = async () => {
+      attempts++;
+      try {
+        const response = await fetch(u(`/api/billing/contribution/${encodeURIComponent(contributionReceipt)}`), { credentials: 'same-origin', cache: 'no-store', signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10_000)]) });
+        const receipt = response.ok ? await response.json() as { confirmed?: boolean } : null;
+        if (receipt?.confirmed) {
+          const fresh = await access();
+          if (cancelled) return;
+          if (fresh.credits) setCredits(fresh.credits);
+          setFunding({ billing: fresh.billing, sponsored: fresh.sponsored });
+          setContributionConfirmed(true);
+          return;
+        }
+      } catch { /* A delayed notification or connection never creates a local grant. */ }
+      if (cancelled) return;
+      if (attempts >= 30) setConfirmationSlow(true);
+      else timer = setTimeout(() => void poll(), 2000);
+    };
+    void poll();
+    return () => { cancelled = true; abort.abort(); clearTimeout(timer); };
+  }, [showSupportThanks, contributionReceipt]);
   const sock = useRef<ReturnType<typeof connect> | null>(null);
   const lastRequest = useRef<string | null>(null);
   const send = useCallback((m: ControlClientMessage) => sock.current?.send(m) ?? false, []);
@@ -815,7 +849,7 @@ export function Reader() {
         )}
       </main>
 
-      {showSupportThanks && <div className="r-toast" role="status"><span>JazakAllahu khayran for supporting Quran Reader. Shared hours are added after Stripe confirms payment.</span><button aria-label="Dismiss thank-you message" onClick={() => setDonated(false)}>×</button></div>}
+      {showSupportThanks && <div className="r-toast" role="status"><span>{contributionConfirmed ? 'JazakAllahu khayran. Your contribution is confirmed and the shared hours are updated.' : confirmationSlow ? 'Your contribution is still confirming. Shared hours will update when it clears.' : 'Confirming your contribution…'}</span><button aria-label="Dismiss contribution message" onClick={() => setDonated(false)}>×</button></div>}
       {menuOpen && (
         <ReaderModal label="Menu" onClose={() => setMenuOpen(false)}>
           <nav className="r-time r-menu" onClick={(e) => e.stopPropagation()}>

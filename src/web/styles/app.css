@@ -445,7 +445,6 @@ html[data-reader-theme='paper'] .r-give-stats .lit dd,
 html[data-reader-theme='paper'] .r-give-legend .lit,
 html[data-reader-theme='paper'] .r-pool .r-give-amounts button strong { color: #73501b; }
 html[data-reader-theme='paper'] .r-give-dots i.lit { background: var(--gold); border-color: var(--gold); box-shadow: none; }
-html[data-reader-theme='paper'] .r-pool-track span { background: linear-gradient(90deg, #c2a565, var(--gold)); }
 html[data-surface='reader'][data-reader-theme='paper'] button:hover:not(:disabled):not(.r-mic):not(.r-theme-choice):not(.r-quiet-link) { background: var(--ink-2); border-color: var(--gold-dim); }
 .r-reading-dialog { width: min(calc(100% - 24px), 520px); max-height: 88dvh; overflow: auto; margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 22px; color: var(--text); background: var(--ink-1); font: 16px/1.5 var(--ui); }
 .r-reading-dialog::backdrop { background: rgba(4, 10, 12, .6); }
@@ -828,39 +827,73 @@ a.about-ref:hover { text-decoration: underline; }
 @media (prefers-reduced-motion: reduce) { .r-give-dots i { transition: none; opacity: 1; transform: none; } }
 .r-give .r-give-legend, .r-give .r-give-first { margin-left: auto !important; margin-right: auto !important; text-align: center; }
 
-/* Shared hours: quiet when closed (one number, one bar), fuller when open. */
-.r-pool { margin: 28px auto 0; max-width: 34rem; border: 1px solid var(--line); border-radius: 16px; background: var(--ink-1); text-align: left; overflow: hidden; }
-.r-pool.open { border-color: rgba(207, 170, 98, 0.45); }
-.r-pool-overview { padding: 16px 16px 0; }
-.r-budget-note { margin: 10px 16px !important; font-size: 12px; color: var(--muted); line-height: 1.5; }
-.r-pool-title { margin: 0 0 14px !important; font: 650 14px/1.4 var(--ui); color: var(--text); }
-.r-pool-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
-.r-pool-totals dt { font-size: 12px; line-height: 1.45; min-height: 2.9em; color: var(--muted); margin-bottom: 7px; }
-.r-pool-totals dd { margin: 0; font: 700 clamp(16px, 4vw, 22px)/1.3 var(--ui); font-variant-numeric: tabular-nums; color: var(--ivory); overflow-wrap: anywhere; }
-.r-pool-totals > :last-child dd { color: var(--gold); }
-.r-pool-head { display: flex; flex-direction: column; gap: 8px; width: 100%; margin: 0; padding: 14px 16px 13px; border: none; border-radius: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.r-pool-head:hover .r-pool-cta, .r-pool-head:focus-visible .r-pool-cta { background: rgba(207, 170, 98, 0.24); }
-.r-pool-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.r-pool-now { font-size: 15px; color: var(--text); }
-.r-pool-now strong { font: 750 20px/1 var(--ui); color: var(--ivory); font-variant-numeric: tabular-nums; margin-right: 2px; }
-.r-pool-cta { flex: none; padding: 5px 11px; border-radius: 999px; background: rgba(207, 170, 98, 0.14); color: var(--gold); font: 650 12.5px/1 var(--ui); }
-.r-pool-track { display: block; height: 6px; border-radius: 999px; background: rgba(233, 229, 218, 0.08); overflow: hidden; }
-.r-pool-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(207, 170, 98, 0.55), #f3d898); transition: width 900ms cubic-bezier(0.2, 0.7, 0.2, 1); }
-.r-pool-sub { font-size: 12.5px; color: var(--muted); }
-.r-pool-body { padding: 2px 16px 16px; border-top: 1px solid var(--line); }
-.r-pool-why { margin: 12px 0 14px !important; font-size: 14.5px; line-height: 1.55; color: var(--text) !important; text-align: left; max-width: none !important; }
-.r-pool .r-give-field { text-align: center; }
-.r-pool-activity { list-style: none; margin: 0 0 14px; padding: 0; font-size: 13.5px; color: var(--text); }
-.r-pool-activity li { position: relative; padding-left: 16px; margin: 4px 0; }
-.r-pool-activity li::before { content: ''; position: absolute; left: 2px; top: 0.55em; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); }
-.r-pool .r-give-amounts button { background: rgba(207, 170, 98, 0.12); border: 1px solid rgba(207, 170, 98, 0.5); color: var(--ivory); }
-.r-pool .r-give-amounts button strong { color: #f3d898; }
-.r-pool .r-give-amounts button span { opacity: 0.85; }
-.r-pool .r-give-amounts button:hover:not(:disabled), .r-pool .r-give-amounts button:focus-visible { background: rgba(207, 170, 98, 0.22); filter: none; }
-.r-pool .r-give-more { display: block; text-align: center; }
+/* Community listening: a proportional balance ring, with the explanation one tap away. */
+.r-pool { --pool-reserve: #68a7a2; --pool-reserve-soft: #214448; --pool-spent: #52666b;
+  margin: 28px auto 0; max-width: 34rem; border: 1px solid var(--line); border-radius: 22px; background: var(--ink-1); text-align: left; overflow: hidden; }
+.r-pool.open { border-color: var(--gold-dim); }
+.r-pool-overview { display: grid; grid-template-columns: 148px minmax(0, 1fr); align-items: center; gap: 26px; padding: 20px 24px 20px 18px; }
+.r-pool-graph { position: relative; width: 100%; aspect-ratio: 1; }
+.r-pool-graph svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.r-pool-ring-base, .r-pool-ring { fill: none; stroke-width: 13; }
+.r-pool-ring-base { stroke: var(--line); opacity: .45; }
+.r-pool-ring { transform: rotate(-90deg); transform-origin: 80px 80px; }
+.r-pool-ring.available { stroke: var(--gold); }
+.r-pool-ring.spent { stroke: var(--pool-spent); }
+.r-pool-graph-value { position: absolute; inset: 24px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; text-align: center; font-variant-numeric: tabular-nums; }
+.r-pool-graph-value strong { font: 650 36px/1 var(--ui); letter-spacing: -.055em; color: var(--gold); }
+.r-pool-graph-value > span { font: 450 11px/1.25 var(--ui); color: var(--text); white-space: nowrap; }
+.r-pool-summary { min-width: 0; }
+.r-pool .r-pool-title { margin: 0 0 5px !important; max-width: none; color: var(--muted); font: 550 12px/1.3 var(--ui); letter-spacing: .025em; }
+.r-pool .r-pool-funded { margin: 0 0 12px !important; color: var(--muted); font: 400 12px/1.3 var(--ui); }
+.r-pool-funded strong { color: var(--ivory); font-weight: 650; font-size: 17px; font-variant-numeric: tabular-nums; }
+.r-pool-key { display: grid; gap: 6px; margin: 0 0 12px; font: 400 12px/1.3 var(--ui); font-variant-numeric: tabular-nums; }
+.r-pool-key > div { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.r-pool-key dt { display: flex; align-items: center; gap: 7px; color: var(--muted); }
+.r-pool-key dt::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex: none; background: var(--pool-spent); }
+.r-pool-key .reserve dt::before { background: repeating-linear-gradient(135deg, var(--pool-reserve), var(--pool-reserve) 1px, var(--pool-reserve-soft) 1px, var(--pool-reserve-soft) 3px); }
+.r-pool-key dd { margin: 0; color: var(--text); }
+.r-pool-toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; min-height: 42px; padding: 9px 13px; border: 1px solid var(--gold-dim); border-radius: 11px; background: transparent; color: var(--gold); font: 650 13px/1.2 var(--ui); text-align: left; }
+.r-pool-toggle > span { font-size: 19px; font-weight: 400; line-height: 1; }
+.r-pool-toggle:hover:not(:disabled) { background: var(--ink-2); border-color: var(--gold); }
+.r-pool-toggle:focus-visible, .r-pool-accounting summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 4px; }
+.r-pool-body { padding: 20px 22px 18px; border-top: 1px solid var(--line); }
+.r-pool-body h3 { margin: 0 0 16px; font: 600 23px/1.2 var(--serif); letter-spacing: -.02em; color: var(--ivory); }
+.r-pool .r-give-amounts { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.r-pool .r-give-amounts button { min-height: 82px; padding: 13px 5px; gap: 8px; background: var(--ink-2); border: 1px solid var(--gold-dim); border-radius: 12px; color: var(--ivory); }
+.r-pool .r-give-amounts button strong { color: var(--gold); font-size: 24px; }
+.r-pool .r-give-amounts button span { color: var(--text); font-size: 12px; opacity: 1; white-space: nowrap; }
+.r-pool .r-give-amounts button:hover:not(:disabled), .r-pool .r-give-amounts button:focus-visible { background: var(--ink-3); border-color: var(--gold); filter: none; }
+.r-pool .r-pool-estimate { margin: 10px 0 5px !important; max-width: none; color: var(--text); font: 400 12px/1.45 var(--ui); }
+.r-pool .r-pool-checkout { margin: 0 0 17px !important; max-width: none; color: var(--muted); font: 400 12px/1.45 var(--ui); }
+.r-pool-accounting { margin: 17px 0 14px; padding: 13px 0 0; border-top: 1px solid var(--line); color: var(--muted); font: 400 12.5px/1.55 var(--ui); }
+.r-pool-accounting summary { width: fit-content; padding: 2px 0; color: var(--text); font-size: 13px; cursor: pointer; }
+.r-pool-accounting p { margin: 12px 0 !important; max-width: none; color: var(--muted); }
+.r-pool-accounting dl { margin: 12px 0; }
+.r-pool-accounting dl div { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; padding: 3px 0; }
+.r-pool-accounting dd { margin: 0; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+.r-pool .r-pool-legal { margin: 14px 0 0 !important; max-width: none; color: var(--muted); font: 400 11.5px/1.5 var(--ui); }
+.r-pool .r-give-more { display: inline-flex; align-items: center; gap: 6px; margin-top: 10px; text-align: left; font-size: 12px; }
 .r-time .r-pool { margin: 14px 0 16px; }
-@media (prefers-reduced-motion: reduce) { .r-pool-track span { transition: none; } }
-.r-pool .r-give-legend { margin: 0 auto 14px !important; text-align: center; max-width: 34em; }
+html[data-reader-theme='paper'] .r-pool { --pool-reserve: #617d73; --pool-reserve-soft: #d7dfd2; --pool-spent: #b2b6a9; }
+@media (max-width: 420px) {
+  .r-pool-overview { grid-template-columns: 126px minmax(0, 1fr); gap: 15px; padding: 17px 17px 17px 12px; }
+  .r-pool-graph-value { inset: 20px 10px; }
+  .r-pool-graph-value strong { font-size: 32px; }
+  .r-pool-graph-value > span { font-size: 10px; }
+  .r-pool-funded strong { font-size: 15px; }
+  .r-pool-key { font-size: 11px; }
+  .r-pool-toggle { min-height: 44px; font-size: 12px; padding: 9px 10px; }
+  .r-pool-body { padding: 18px 17px 16px; }
+}
+@media (max-width: 350px) {
+  .r-pool-overview { grid-template-columns: 110px minmax(0, 1fr); gap: 11px; padding: 15px 13px 15px 9px; }
+  .r-pool .r-pool-title { font-size: 11px; }
+  .r-pool-key { font-size: 10.5px; }
+  .r-pool-key > div { gap: 5px; }
+  .r-pool-graph-value strong { font-size: 28px; }
+  .r-pool-graph-value > span { font-size: 9px; }
+  .r-pool .r-give-amounts button span { font-size: 11px; }
+}
 
 /* Stream colour: the stage's highlight follows the broadcaster's choice (gold keeps these defaults).
    Only the highlight: surah banner, ornaments, reference and hairlines stay gold, the page's frame. */
